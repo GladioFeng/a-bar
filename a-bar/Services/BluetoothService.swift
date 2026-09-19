@@ -1,0 +1,516 @@
+import Combine
+import Foundation
+import IOBluetooth
+
+/// Bluetooth power state, paired devices, connection state and battery levels.
+///
+/// Two sources are merged:
+/// - IOBluetooth (in-process, free): power state, paired list, connection
+///   state. Polled on a short timer and refreshed instantly through
+///   IOBluetooth connect/disconnect notifications.
+/// - `system_profiler SPBluetoothDataType -json` (~0.1s, forks a process):
+///   the only source of battery levels. IOBluetooth does not expose battery at
+///   all. Polled lazily — while the popover is open, or shortly after a
+///   connection change — so an idle bar never forks a process.
+///
+/// Threading: every IOBluetooth object access happens on the main thread.
+/// `IOBluetoothUserNotification` callbacks are delivered on the run loop of the
+/// registering thread, and a GCD worker queue has no run loop, so registering
+/// off-main means callbacks silently never fire. Only the blocking
+/// `openConnection()` / `closeConnection()` calls run on `workQueue`.
+final class BluetoothService: ObservableObject {
+  static let shared = BluetoothService()
+
+  @Published private(set) var info = BluetoothInfo()
+  /// Normalized addresses with a connect/disconnect request in flight.
+  @Published private(set) var pendingAddresses: Set<String> = []
+
+  private var refreshTimer: Timer?
+  private var batteryTimer: Timer?
+  private var connectNotification: IOBluetoothUserNotification?
+  private var disconnectNotifications: [String: IOBluetoothUserNotification] = [:]
+  private var batteryCache: [String: BluetoothBatteryLevels] = [:]
+  /// Device kind fallback from system_profiler's `device_minorType`, for
+  /// devices whose Class of Device reads as 0.
+  private var minorTypeCache: [String: String] = [:]
+  private var isPopoverOpen = false
+  private var isFetchingBattery = false
+
+  private let settingsManager = SettingsManager.shared
+  private let workQueue = DispatchQueue(label: "com.a-bar.bluetooth", qos: .userInitiated)
+
+  private lazy var observer = BluetoothNotificationObserver { [weak self] in
+    self?.handleConnectionNotification()
+  }
+
+  private var settings: BluetoothWidgetSettings {
+    settingsManager.settings.widgets.bluetooth
+  }
+
+  private init() {}
+
+  // MARK: - Lifecycle
+
+  func start() {
+    refreshDevices()
+    registerConnectNotification()
+    startTimers()
+  }
+
+  func stop() {
+    refreshTimer?.invalidate()
+    refreshTimer = nil
+    batteryTimer?.invalidate()
+    batteryTimer = nil
+    connectNotification?.unregister()
+    connectNotification = nil
+    for (_, notification) in disconnectNotifications {
+      notification.unregister()
+    }
+    disconnectNotifications.removeAll()
+  }
+
+  func refresh() {
+    refreshDevices()
+    refreshBatteryLevels(force: true)
+  }
+
+  private func startTimers() {
+    refreshTimer?.invalidate()
+    refreshTimer = Timer.scheduledTimer(
+      withTimeInterval: settings.refreshInterval, repeats: true
+    ) { [weak self] _ in
+      self?.refreshDevices()
+    }
+
+    batteryTimer?.invalidate()
+    batteryTimer = Timer.scheduledTimer(
+      withTimeInterval: settings.batteryRefreshInterval, repeats: true
+    ) { [weak self] _ in
+      self?.refreshBatteryLevels()
+    }
+  }
+
+  // MARK: - IOBluetooth snapshot (main thread)
+
+  /// Read power state and the paired device list straight from IOBluetooth.
+  /// Cheap enough to run on the main thread; `system_profiler` is not.
+  func refreshDevices() {
+    var next = BluetoothInfo()
+    next.canTogglePower = BluetoothService.setPowerState != nil
+
+    if let controller = IOBluetoothHostController.default() {
+      next.hasController = true
+      next.isPoweredOn = controller.powerState == kBluetoothHCIPowerStateON
+    }
+
+    if next.isPoweredOn, let paired = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] {
+      next.devices =
+        paired
+        .compactMap { device -> BluetoothPairedDevice? in
+          guard let address = device.addressString else { return nil }
+          let id = BluetoothService.normalizedAddress(address)
+          let isConnected = device.isConnected()
+          let name = device.name ?? device.nameOrAddress ?? address
+          return BluetoothPairedDevice(
+            id: id,
+            address: address,
+            name: name,
+            isConnected: isConnected,
+            kind: BluetoothService.kind(
+              major: Int(device.deviceClassMajor),
+              minor: Int(device.deviceClassMinor),
+              minorTypeHint: minorTypeCache[id]
+            ),
+            battery: isConnected ? batteryCache[id] : nil
+          )
+        }
+        .sorted {
+          $0.isConnected == $1.isConnected
+            ? $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            : $0.isConnected
+        }
+    }
+
+    if !next.isPoweredOn {
+      batteryCache.removeAll()
+    }
+
+    // Avoid republishing identical state: the timer would otherwise re-render
+    // every bar on every display on each tick.
+    if info != next {
+      info = next
+    }
+    registerDisconnectNotifications()
+  }
+
+  // MARK: - system_profiler (battery)
+
+  /// Battery levels are only available through `system_profiler`, which forks a
+  /// process, so this is demand-driven rather than timer-driven: it runs while
+  /// the popover is open, when the user opted into showing battery in the bar,
+  /// or shortly after a connection change.
+  func refreshBatteryLevels(force: Bool = false) {
+    guard info.isPoweredOn, !info.connectedDevices.isEmpty else { return }
+    guard force || isPopoverOpen || settings.showBatteryInBar else { return }
+    guard !isFetchingBattery else { return }
+    isFetchingBattery = true
+
+    Task {
+      let parsed = await BluetoothService.fetchBatteryLevels()
+      await MainActor.run {
+        self.isFetchingBattery = false
+        guard let parsed = parsed else { return }
+        self.batteryCache = parsed.battery
+        self.minorTypeCache = parsed.minorTypes
+        self.refreshDevices()
+      }
+    }
+  }
+
+  /// Re-read battery a beat after a connection change. Deliberately NOT forced:
+  /// if the popover is closed and the user has not opted into battery in the
+  /// bar, nobody is looking, so an idle bar still never forks a process.
+  private func scheduleBatteryRefresh(after delay: TimeInterval) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+      self?.refreshBatteryLevels()
+    }
+  }
+
+  private struct ParsedProfile {
+    var battery: [String: BluetoothBatteryLevels]
+    var minorTypes: [String: String]
+  }
+
+  private static func fetchBatteryLevels() async -> ParsedProfile? {
+    let output: String
+    do {
+      output = try await ShellExecutor.run(
+        "system_profiler SPBluetoothDataType -json", timeout: 5)
+    } catch {
+      print("Bluetooth: system_profiler failed: \(error)")
+      return nil
+    }
+
+    guard let data = output.data(using: .utf8),
+      let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let entries = root["SPBluetoothDataType"] as? [[String: Any]],
+      let first = entries.first
+    else {
+      print("Bluetooth: could not parse system_profiler output")
+      return nil
+    }
+
+    var battery: [String: BluetoothBatteryLevels] = [:]
+    var minorTypes: [String: String] = [:]
+
+    // `device_connected` is absent entirely when nothing is connected, and each
+    // element is a single-key dictionary keyed by the device's display name.
+    for key in ["device_connected", "device_not_connected"] {
+      guard let list = first[key] as? [[String: Any]] else { continue }
+      for entry in list {
+        guard let (_, value) = entry.first,
+          let props = value as? [String: Any],
+          let address = props["device_address"] as? String
+        else { continue }
+        let id = normalizedAddress(address)
+
+        if let minorType = props["device_minorType"] as? String {
+          minorTypes[id] = minorType
+        }
+
+        var levels = BluetoothBatteryLevels()
+        // Scan by prefix rather than hardcoding the four key names, so a
+        // renamed or added suffix degrades to "unknown" instead of breaking.
+        for (propKey, propValue) in props where propKey.hasPrefix("device_batteryLevel") {
+          guard let percent = batteryPercent(propValue) else { continue }
+          switch propKey.dropFirst("device_batteryLevel".count) {
+          case "Left": levels.left = percent
+          case "Right": levels.right = percent
+          case "Case": levels.caseLevel = percent
+          default: levels.main = percent
+          }
+        }
+        if !levels.isEmpty {
+          battery[id] = levels
+        }
+      }
+    }
+
+    return ParsedProfile(battery: battery, minorTypes: minorTypes)
+  }
+
+  /// system_profiler reports battery as a localized percentage string — the
+  /// observed value is "100\u{00A0}%", with a NON-BREAKING space (U+00A0), and
+  /// the format varies by macOS version and locale. Keep only the digits rather
+  /// than trimming a fixed character set: `trimmingCharacters(in: "% ")` leaves
+  /// the U+00A0 in place, `Int(_:)` then returns nil, and battery silently
+  /// never renders.
+  static func batteryPercent(_ raw: Any?) -> Int? {
+    if let value = raw as? Int { return value }
+    if let value = raw as? Double { return Int(value.rounded()) }
+    guard let text = raw as? String else { return nil }
+    let digits = text.filter { $0.isNumber }
+    return digits.isEmpty ? nil : Int(digits)
+  }
+
+  /// Merge key shared by IOBluetooth and system_profiler. IOBluetooth reports
+  /// "ac-bf-71-09-96-af" while system_profiler reports "AC:BF:71:09:96:AF", so
+  /// comparing them directly always fails and battery never appears.
+  static func normalizedAddress(_ raw: String) -> String {
+    raw.lowercased().filter { $0.isHexDigit }
+  }
+
+  // MARK: - Popover-driven cadence
+
+  func setPopoverOpen(_ open: Bool) {
+    isPopoverOpen = open
+    if open {
+      refreshDevices()
+      refreshBatteryLevels(force: true)
+    }
+  }
+
+  // MARK: - Actions
+
+  /// `IOBluetoothPreferenceSetControllerPowerState` is private: it is exported
+  /// by IOBluetooth but declared in no public header, so it is resolved at
+  /// runtime. If it ever disappears, the widget opens the Bluetooth settings
+  /// pane instead of crashing. Note this would block App Store distribution —
+  /// irrelevant here, since a-bar is ad-hoc signed and shipped via GitHub.
+  private typealias SetControllerPowerState = @convention(c) (Int32) -> Void
+
+  private static let setPowerState: SetControllerPowerState? = {
+    // RTLD_DEFAULT — IOBluetooth is already loaded via `import IOBluetooth`.
+    guard
+      let symbol = dlsym(
+        UnsafeMutableRawPointer(bitPattern: -2),
+        "IOBluetoothPreferenceSetControllerPowerState")
+    else {
+      print("Bluetooth: power toggle unavailable (symbol not found)")
+      return nil
+    }
+    return unsafeBitCast(symbol, to: SetControllerPowerState.self)
+  }()
+
+  func togglePower() {
+    guard let setPowerState = BluetoothService.setPowerState else {
+      openBluetoothSettings()
+      return
+    }
+    setPowerState(info.isPoweredOn ? 0 : 1)
+    // The daemon applies the change asynchronously; re-read shortly after.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+      self?.refreshDevices()
+    }
+  }
+
+  /// Connect or disconnect a paired device.
+  ///
+  /// `openConnection()` / `closeConnection()` are synchronous IOBluetooth calls
+  /// that can block for several seconds on a device that has to be paged, so
+  /// they run off the main thread — otherwise the whole bar freezes. The device
+  /// is re-resolved by address on the worker queue (IOBluetooth vends a single
+  /// instance per address) so main-thread objects are never touched off-main.
+  func toggleConnection(for device: BluetoothPairedDevice) {
+    guard !pendingAddresses.contains(device.id) else { return }
+    let address = device.address
+    let id = device.id
+    let shouldConnect = !device.isConnected
+    pendingAddresses.insert(id)
+
+    // Watchdog: never let a row's spinner stick forever.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+      self?.pendingAddresses.remove(id)
+    }
+
+    workQueue.async { [weak self] in
+      var status: IOReturn = kIOReturnError
+      if let target = IOBluetoothDevice(addressString: address) {
+        status = shouldConnect ? target.openConnection() : target.closeConnection()
+      }
+      DispatchQueue.main.async {
+        guard let self = self else { return }
+        self.pendingAddresses.remove(id)
+        if status != kIOReturnSuccess {
+          print(
+            "Bluetooth: \(shouldConnect ? "connect" : "disconnect") failed for \(address) (\(status))"
+          )
+        }
+        self.refreshDevices()
+        // AirPods and friends publish battery a beat after the link comes up.
+        self.scheduleBatteryRefresh(after: 2.5)
+      }
+    }
+  }
+
+  func openBluetoothSettings() {
+    Task {
+      _ = try? await ShellExecutor.run("open /System/Library/PreferencePanes/Bluetooth.prefPane/")
+    }
+  }
+
+  // MARK: - Connect / disconnect notifications
+
+  private func registerConnectNotification() {
+    connectNotification?.unregister()
+    connectNotification = IOBluetoothDevice.register(
+      forConnectNotifications: observer,
+      selector: #selector(BluetoothNotificationObserver.deviceConnected(_:device:))
+    )
+  }
+
+  /// Disconnect notifications are per device instance, so they are refreshed to
+  /// match the currently connected set after every snapshot.
+  private func registerDisconnectNotifications() {
+    let connected = Set(info.connectedDevices.map { $0.id })
+
+    for (id, notification) in disconnectNotifications where !connected.contains(id) {
+      notification.unregister()
+      disconnectNotifications.removeValue(forKey: id)
+    }
+
+    for device in info.connectedDevices where disconnectNotifications[device.id] == nil {
+      guard let target = IOBluetoothDevice(addressString: device.address) else { continue }
+      disconnectNotifications[device.id] = target.register(
+        forDisconnectNotification: observer,
+        selector: #selector(BluetoothNotificationObserver.deviceDisconnected(_:device:))
+      )
+    }
+  }
+
+  private func handleConnectionNotification() {
+    refreshDevices()
+    scheduleBatteryRefresh(after: 2.5)
+  }
+}
+
+/// Obj-C shim for IOBluetooth's notification API, which requires a real
+/// NSObject target and a two-argument selector — passing nil returns nil, so a
+/// Swift closure or struct will not do.
+private final class BluetoothNotificationObserver: NSObject {
+  private let onChange: () -> Void
+
+  init(onChange: @escaping () -> Void) {
+    self.onChange = onChange
+    super.init()
+  }
+
+  @objc func deviceConnected(_ notification: IOBluetoothUserNotification, device: IOBluetoothDevice)
+  {
+    onChange()
+  }
+
+  @objc func deviceDisconnected(
+    _ notification: IOBluetoothUserNotification, device: IOBluetoothDevice
+  ) {
+    onChange()
+  }
+}
+
+// MARK: - Models
+
+/// Aggregate Bluetooth state published to the widgets.
+struct BluetoothInfo: Equatable {
+  /// A Bluetooth controller is present on this Mac.
+  var hasController: Bool = false
+  /// Controller radio is powered on.
+  var isPoweredOn: Bool = false
+  /// Paired devices, connected ones first, then alphabetically.
+  var devices: [BluetoothPairedDevice] = []
+  /// False when the private power-toggle symbol could not be resolved.
+  var canTogglePower: Bool = true
+
+  var connectedDevices: [BluetoothPairedDevice] { devices.filter { $0.isConnected } }
+}
+
+/// A paired Bluetooth device. Named to avoid shadowing IOBluetooth's own
+/// `IOBluetoothDevice` and the `Bluetooth*` C types from Bluetooth.h.
+struct BluetoothPairedDevice: Identifiable, Equatable {
+  /// Normalized address — also the merge key against system_profiler.
+  let id: String
+  /// Address as IOBluetooth reports it ("ac-bf-71-09-96-af").
+  let address: String
+  let name: String
+  let isConnected: Bool
+  let kind: BluetoothDeviceKind
+  /// Only known while connected, and only via system_profiler.
+  var battery: BluetoothBatteryLevels?
+}
+
+/// Battery levels reported by `system_profiler`. Any combination may be absent:
+/// single-battery headsets report only `main`, AirPods report left/right/case.
+struct BluetoothBatteryLevels: Equatable {
+  var main: Int?
+  var left: Int?
+  var right: Int?
+  var caseLevel: Int?
+
+  var isEmpty: Bool { main == nil && left == nil && right == nil && caseLevel == nil }
+  /// Lowest known level, used for the "low battery" tint.
+  var lowest: Int? { [main, left, right, caseLevel].compactMap { $0 }.min() }
+}
+
+/// Coarse device family, used to pick an SF Symbol.
+enum BluetoothDeviceKind: Equatable {
+  case headphones, speaker, keyboard, mouse, gamepad, phone, watch, computer, other
+
+  var symbolName: String {
+    switch self {
+    case .headphones: return "headphones"
+    case .speaker: return "hifispeaker"
+    case .keyboard: return "keyboard"
+    case .mouse: return "computermouse"
+    case .gamepad: return "gamecontroller"
+    case .phone: return "iphone"
+    case .watch: return "applewatch"
+    case .computer: return "laptopcomputer"
+    case .other: return "dot.radiowaves.left.and.right"
+    }
+  }
+}
+
+extension BluetoothService {
+  /// Classify from the Class of Device. Several paired devices report a class
+  /// of 0, so system_profiler's `device_minorType` string is used as a fallback.
+  static func kind(major: Int, minor: Int, minorTypeHint: String?) -> BluetoothDeviceKind {
+    switch major {
+    case Int(kBluetoothDeviceClassMajorAudio):
+      switch minor {
+      case Int(kBluetoothDeviceClassMinorAudioLoudspeaker),
+        Int(kBluetoothDeviceClassMinorAudioPortable),
+        Int(kBluetoothDeviceClassMinorAudioHiFi):
+        return .speaker
+      default:
+        return .headphones
+      }
+    case Int(kBluetoothDeviceClassMajorPeripheral):
+      // The peripheral minor class is a bitfield: keyboard / pointing live in
+      // the high bits, the device kind in the low nibble.
+      if minor & Int(kBluetoothDeviceClassMinorPeripheral1Keyboard) != 0 { return .keyboard }
+      if minor & Int(kBluetoothDeviceClassMinorPeripheral1Pointing) != 0 { return .mouse }
+      if minor & 0x0F == Int(kBluetoothDeviceClassMinorPeripheral2Gamepad) { return .gamepad }
+      return .other
+    case Int(kBluetoothDeviceClassMajorPhone):
+      return .phone
+    case Int(kBluetoothDeviceClassMajorWearable):
+      return .watch
+    case Int(kBluetoothDeviceClassMajorComputer):
+      return .computer
+    default:
+      return kindFromMinorType(minorTypeHint)
+    }
+  }
+
+  private static func kindFromMinorType(_ hint: String?) -> BluetoothDeviceKind {
+    guard let hint = hint?.lowercased() else { return .other }
+    if hint.contains("headphone") || hint.contains("headset") { return .headphones }
+    if hint.contains("speaker") { return .speaker }
+    if hint.contains("keyboard") { return .keyboard }
+    if hint.contains("mouse") || hint.contains("trackpad") { return .mouse }
+    if hint.contains("gamepad") || hint.contains("controller") { return .gamepad }
+    if hint.contains("phone") { return .phone }
+    if hint.contains("watch") { return .watch }
+    return .other
+  }
+}

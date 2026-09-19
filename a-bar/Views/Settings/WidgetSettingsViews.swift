@@ -335,6 +335,50 @@ struct NetworkSettingsView: View, ABarSettingsBindable {
             )
           )
         }
+
+        Divider()
+
+        // Bluetooth
+        Section {
+          Text("Bluetooth").font(.headline)
+          Toggle("Show icon", isOn: binding(\.widgets.bluetooth.showIcon))
+          Toggle(
+            "Show connected device name",
+            isOn: binding(\.widgets.bluetooth.showConnectedDeviceName))
+          Toggle(
+            "Show connected device count", isOn: binding(\.widgets.bluetooth.showConnectedCount))
+          Toggle("Show battery level in the bar", isOn: binding(\.widgets.bluetooth.showBatteryInBar))
+          Toggle("Hide when disabled", isOn: binding(\.widgets.bluetooth.hideWhenDisabled))
+
+          HStack(spacing: 4) {
+            Text("Refresh interval")
+            TextField(
+              "", value: binding(\.widgets.bluetooth.refreshInterval), formatter: NumberFormatter()
+            )
+            .frame(width: 60)
+            .textFieldStyle(RoundedBorderTextFieldStyle())
+            Text("seconds")
+          }
+
+          HStack(spacing: 4) {
+            Text("Battery refresh interval")
+            TextField(
+              "", value: binding(\.widgets.bluetooth.batteryRefreshInterval),
+              formatter: NumberFormatter()
+            )
+            .frame(width: 60)
+            .textFieldStyle(RoundedBorderTextFieldStyle())
+            Text("seconds")
+          }
+
+          ThemeColorPicker(
+            label: "Background color",
+            selectedColor: Binding(
+              get: { settings.draftSettings.widgets.bluetooth.backgroundColor },
+              set: { settings.draftSettings.widgets.bluetooth.backgroundColor = $0 }
+            )
+          )
+        }
       }
       .padding()
     }
@@ -1338,7 +1382,7 @@ struct AboutView: View {
         .font(.headline)
         .foregroundColor(.secondary)
 
-      Text("Version 1.4.3")
+      Text("Version 1.5.0")
         .font(.caption)
 
       Divider()

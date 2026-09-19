@@ -17,6 +17,7 @@ enum WidgetIdentifier: String, Codable, CaseIterable, Identifiable {
   case time = "time"
   case date = "date-display"
   case wifi = "wifi"
+  case bluetooth = "bluetooth"
   case sound = "sound"
   case mic = "mic"
   case keyboard = "keyboard"
@@ -48,6 +49,7 @@ enum WidgetIdentifier: String, Codable, CaseIterable, Identifiable {
     case .time: return "Time"
     case .date: return "Date"
     case .wifi: return "Wi-Fi"
+    case .bluetooth: return "Bluetooth"
     case .sound: return "Sound"
     case .mic: return "Microphone"
     case .keyboard: return "Keyboard"
@@ -75,6 +77,7 @@ enum WidgetIdentifier: String, Codable, CaseIterable, Identifiable {
     case .time: return "clock"
     case .date: return "calendar"
     case .wifi: return "wifi"
+    case .bluetooth: return "antenna.radiowaves.left.and.right"
     case .sound: return "speaker.wave.2"
     case .mic: return "mic"
     case .keyboard: return "keyboard"
@@ -124,12 +127,13 @@ enum WidgetIdentifier: String, Codable, CaseIterable, Identifiable {
     case .storage: return .right(6)
     case .github: return .right(7)
     case .wifi: return .right(8)
-    case .keyboard: return .right(9)
-    case .mic: return .right(10)
-    case .sound: return .right(11)
-    case .battery: return .right(12)
-    case .date: return .right(13)
-    case .time: return .right(14)
+    case .bluetooth: return .right(9)
+    case .keyboard: return .right(10)
+    case .mic: return .right(11)
+    case .sound: return .right(12)
+    case .battery: return .right(13)
+    case .date: return .right(14)
+    case .time: return .right(15)
     }
   }
 }
@@ -243,6 +247,7 @@ struct SingleBarLayout: Codable, Equatable {
         WidgetInstance(identifier: .cpu),
         WidgetInstance(identifier: .memory),
         WidgetInstance(identifier: .wifi),
+        WidgetInstance(identifier: .bluetooth),
         WidgetInstance(identifier: .keyboard),
         WidgetInstance(identifier: .mic),
         WidgetInstance(identifier: .sound),

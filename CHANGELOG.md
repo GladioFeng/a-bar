@@ -4,7 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-_No changes yet._
+_No unreleased changes_
+
+## v1.5.0 - 2026-09-19
+
+- feat: add bluetooth widget with paired devices popover, battery levels and power toggle
 
 ## v1.4.3 - 2026-06-14
 

@@ -328,6 +328,10 @@ class SettingsManager: ObservableObject {
     validated.widgets.netstats.refreshInterval = max(
       0.5, validated.widgets.netstats.refreshInterval)
     validated.widgets.storage.refreshInterval = max(10, validated.widgets.storage.refreshInterval)
+    validated.widgets.bluetooth.refreshInterval = max(
+      1, validated.widgets.bluetooth.refreshInterval)
+    validated.widgets.bluetooth.batteryRefreshInterval = max(
+      15, validated.widgets.bluetooth.batteryRefreshInterval)
 
     return validated
   }
@@ -559,6 +563,7 @@ struct WidgetSettings: Codable, Equatable {
   var time: TimeWidgetSettings = TimeWidgetSettings()
   var date: DateWidgetSettings = DateWidgetSettings()
   var wifi: WifiWidgetSettings = WifiWidgetSettings()
+  var bluetooth: BluetoothWidgetSettings = BluetoothWidgetSettings()
   var sound: SoundWidgetSettings = SoundWidgetSettings()
   var mic: MicWidgetSettings = MicWidgetSettings()
   var keyboard: KeyboardWidgetSettings = KeyboardWidgetSettings()
@@ -582,6 +587,7 @@ struct WidgetSettings: Codable, Equatable {
     time = (try? container.decode(TimeWidgetSettings.self, forKey: .time)) ?? TimeWidgetSettings()
     date = (try? container.decode(DateWidgetSettings.self, forKey: .date)) ?? DateWidgetSettings()
     wifi = (try? container.decode(WifiWidgetSettings.self, forKey: .wifi)) ?? WifiWidgetSettings()
+    bluetooth = (try? container.decode(BluetoothWidgetSettings.self, forKey: .bluetooth)) ?? BluetoothWidgetSettings()
     sound = (try? container.decode(SoundWidgetSettings.self, forKey: .sound)) ?? SoundWidgetSettings()
     mic = (try? container.decode(MicWidgetSettings.self, forKey: .mic)) ?? MicWidgetSettings()
     keyboard = (try? container.decode(KeyboardWidgetSettings.self, forKey: .keyboard)) ?? KeyboardWidgetSettings()
@@ -598,7 +604,7 @@ struct WidgetSettings: Codable, Equatable {
   init() {}
   
   private enum CodingKeys: String, CodingKey {
-    case spaces, process, battery, weather, time, date, wifi, sound, mic, keyboard, github
+    case spaces, process, battery, weather, time, date, wifi, bluetooth, sound, mic, keyboard, github
     case cpu, memory, gpu, netstats, diskActivity, storage, hackerNews
   }
 }
@@ -675,6 +681,22 @@ struct WifiWidgetSettings: Codable, Equatable {
   var networkDevice: String = "en0"
   var hideNetworkName: Bool = false
   var backgroundColor: ThemeColor = .red
+  var showIcon: Bool = true
+}
+
+struct BluetoothWidgetSettings: Codable, Equatable {
+  var refreshInterval: TimeInterval = 5
+  /// Battery levels come from `system_profiler`, which forks a process, so it
+  /// is polled far less often than the in-process IOBluetooth state.
+  var batteryRefreshInterval: TimeInterval = 60
+  var hideWhenDisabled: Bool = false
+  var showConnectedDeviceName: Bool = true
+  var showConnectedCount: Bool = false
+  /// Show the connected device battery in the bar. Off by default: it makes the
+  /// bar poll `system_profiler` even when the popover is closed.
+  var showBatteryInBar: Bool = false
+  var maxDeviceNameLength: Int = 15
+  var backgroundColor: ThemeColor = .accent
   var showIcon: Bool = true
 }
 

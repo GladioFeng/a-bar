@@ -27,6 +27,7 @@
 		A1000012 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000012 /* Settings.swift */; };
 		A1000020 /* YabaiService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000020 /* YabaiService.swift */; };
 		A1000022 /* SystemInfoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000022 /* SystemInfoService.swift */; };
+		A1000023 /* BluetoothService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000023 /* BluetoothService.swift */; };
 		A1000030 /* SpacesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000030 /* SpacesWidget.swift */; };
 		A1000031 /* SpaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000031 /* SpaceView.swift */; };
 		A1000032 /* OpenedAppsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000032 /* OpenedAppsView.swift */; };
@@ -40,6 +41,7 @@
 		A1000046 /* MicWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000046 /* MicWidget.swift */; };
 		A1000047 /* KeyboardWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000047 /* KeyboardWidget.swift */; };
 		A1000048 /* GitHubWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000048 /* GitHubWidget.swift */; };
+		A1000049 /* BluetoothWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000049 /* BluetoothWidget.swift */; };
 		A1000050 /* CPUWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000050 /* CPUWidget.swift */; };
 		A1000051 /* MemoryWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000051 /* MemoryWidget.swift */; };
 		A1000052 /* GPUWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000052 /* GPUWidget.swift */; };
@@ -56,6 +58,7 @@
 		A1000081 /* AppIconProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000081 /* AppIconProvider.swift */; };
 		A1000082 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000082 /* Theme.swift */; };
 		A1000083 /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000083 /* Extensions.swift */; };
+		A1000086 /* WidgetPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000086 /* WidgetPopover.swift */; };
 		A1000084 /* RefreshWidgetCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000084 /* RefreshWidgetCommand.swift */; };
 		A1000085 /* XBarParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000085 /* XBarParser.swift */; };
 		A1000090 /* sfsymbols.txt in Resources */ = {isa = PBXBuildFile; fileRef = E1000012 /* sfsymbols.txt */; };
@@ -83,6 +86,7 @@
 		B1000012 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
 		B1000020 /* YabaiService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YabaiService.swift; sourceTree = "<group>"; };
 		B1000022 /* SystemInfoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemInfoService.swift; sourceTree = "<group>"; };
+		B1000023 /* BluetoothService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothService.swift; sourceTree = "<group>"; };
 		B1000030 /* SpacesWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesWidget.swift; sourceTree = "<group>"; };
 		B1000031 /* SpaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceView.swift; sourceTree = "<group>"; };
 		B1000032 /* OpenedAppsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenedAppsView.swift; sourceTree = "<group>"; };
@@ -96,6 +100,7 @@
 		B1000046 /* MicWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicWidget.swift; sourceTree = "<group>"; };
 		B1000047 /* KeyboardWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardWidget.swift; sourceTree = "<group>"; };
 		B1000048 /* GitHubWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubWidget.swift; sourceTree = "<group>"; };
+		B1000049 /* BluetoothWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothWidget.swift; sourceTree = "<group>"; };
 		B1000050 /* CPUWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CPUWidget.swift; sourceTree = "<group>"; };
 		B1000051 /* MemoryWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryWidget.swift; sourceTree = "<group>"; };
 		B1000052 /* GPUWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GPUWidget.swift; sourceTree = "<group>"; };
@@ -112,6 +117,7 @@
 		B1000081 /* AppIconProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconProvider.swift; sourceTree = "<group>"; };
 		B1000082 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		B1000083 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
+		B1000086 /* WidgetPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPopover.swift; sourceTree = "<group>"; };
 		B1000084 /* RefreshWidgetCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefreshWidgetCommand.swift; sourceTree = "<group>"; };
 		B1000085 /* XBarParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XBarParser.swift; sourceTree = "<group>"; };
 		D1000001 /* a-bar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "a-bar.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -179,6 +185,7 @@
 				B1000020 /* YabaiService.swift */,
 				C2000002 /* AerospaceService.swift */,
 				B1000022 /* SystemInfoService.swift */,
+				B1000023 /* BluetoothService.swift */,
 				B1000084 /* RefreshWidgetCommand.swift */,
 			B1000085 /* XBarParser.swift */,
 			);
@@ -234,6 +241,7 @@
 				B1000046 /* MicWidget.swift */,
 				B1000047 /* KeyboardWidget.swift */,
 				B1000048 /* GitHubWidget.swift */,
+				B1000049 /* BluetoothWidget.swift */,
 			);
 			path = Data;
 			sourceTree = "<group>";
@@ -286,6 +294,7 @@
 				B1000081 /* AppIconProvider.swift */,
 				B1000082 /* Theme.swift */,
 				B1000083 /* Extensions.swift */,
+				B1000086 /* WidgetPopover.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -388,6 +397,7 @@
 				0FEC2C322F2E59FE00CDA90B /* StorageWidget.swift in Sources */,
 				A1000020 /* YabaiService.swift in Sources */,
 				A1000022 /* SystemInfoService.swift in Sources */,
+				A1000023 /* BluetoothService.swift in Sources */,
 				A1000084 /* RefreshWidgetCommand.swift in Sources */,
 				A1000030 /* SpacesWidget.swift in Sources */,
 				A1000031 /* SpaceView.swift in Sources */,
@@ -403,6 +413,7 @@
 				A1000046 /* MicWidget.swift in Sources */,
 				A1000047 /* KeyboardWidget.swift in Sources */,
 				A1000048 /* GitHubWidget.swift in Sources */,
+				A1000049 /* BluetoothWidget.swift in Sources */,
 				A1000050 /* CPUWidget.swift in Sources */,
 				A1000051 /* MemoryWidget.swift in Sources */,
 				A1000052 /* GPUWidget.swift in Sources */,
@@ -420,6 +431,7 @@
 				A1000081 /* AppIconProvider.swift in Sources */,
 				A1000082 /* Theme.swift in Sources */,
 				A1000083 /* Extensions.swift in Sources */,
+				A1000086 /* WidgetPopover.swift in Sources */,
 				C1000001 /* AerospaceTypes.swift in Sources */,
 				C1000002 /* AerospaceService.swift in Sources */,
 				C1000003 /* AerospaceSpacesWidget.swift in Sources */,
@@ -577,7 +589,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.4.3;
+				MARKETING_VERSION = 1.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.jeantinland.a-bar";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -607,7 +619,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.4.3;
+				MARKETING_VERSION = 1.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.jeantinland.a-bar";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

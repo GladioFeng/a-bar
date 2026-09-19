@@ -68,6 +68,7 @@ class BarWindow: NSPanel {
     .environmentObject(YabaiService.shared)
     .environmentObject(AerospaceService.shared)
     .environmentObject(SystemInfoService.shared)
+    .environmentObject(BluetoothService.shared)
     .environmentObject(LayoutManager.shared)
 
     hostingView = NSHostingView(rootView: AnyView(barView))
