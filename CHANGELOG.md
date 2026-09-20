@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - test: add a unit test target covering settings decoding, repair, migration and persistence
 - feat: refactor Wi-Fi functionality into a dedicated service like the Bluetooth widget
 - ci: run the test suite on every push and pull request, and fail the build when a test file is not a member of the test target
+- test: cover widget layout accessors, graph history, AeroSpace decoding and theme colour handling
 
 ## v1.5.2 - 2026-09-20
 

@@ -72,6 +72,10 @@
 		A1000202 /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000202 /* SettingsStoreTests.swift */; };
 		A1000203 /* SettingsManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000203 /* SettingsManagerTests.swift */; };
 		A1000204 /* ProfileNormalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000204 /* ProfileNormalizationTests.swift */; };
+		A1000300 /* WidgetTypesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000300 /* WidgetTypesTests.swift */; };
+		A1000301 /* GraphHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000301 /* GraphHistoryTests.swift */; };
+		A1000302 /* AerospaceDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000302 /* AerospaceDecodingTests.swift */; };
+		A1000303 /* ThemeColorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000303 /* ThemeColorTests.swift */; };
 		A1000210 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000012 /* Settings.swift */; };
 		A1000211 /* SettingsCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000025 /* SettingsCodec.swift */; };
 		A1000212 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000026 /* SettingsStore.swift */; };
@@ -150,6 +154,10 @@
 		B1000202 /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		B1000203 /* SettingsManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsManagerTests.swift; sourceTree = "<group>"; };
 		B1000204 /* ProfileNormalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileNormalizationTests.swift; sourceTree = "<group>"; };
+		B1000300 /* WidgetTypesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetTypesTests.swift"; sourceTree = "<group>"; };
+		B1000301 /* GraphHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GraphHistoryTests.swift"; sourceTree = "<group>"; };
+		B1000302 /* AerospaceDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AerospaceDecodingTests.swift"; sourceTree = "<group>"; };
+		B1000303 /* ThemeColorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ThemeColorTests.swift"; sourceTree = "<group>"; };
 		D1000002 /* a-barTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "a-barTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -362,6 +370,10 @@
 				B1000202 /* SettingsStoreTests.swift */,
 				B1000203 /* SettingsManagerTests.swift */,
 				B1000204 /* ProfileNormalizationTests.swift */,
+				B1000300 /* WidgetTypesTests.swift */,
+				B1000301 /* GraphHistoryTests.swift */,
+				B1000302 /* AerospaceDecodingTests.swift */,
+				B1000303 /* ThemeColorTests.swift */,
 			);
 			path = "a-barTests";
 			sourceTree = "<group>";
@@ -523,6 +535,10 @@
 				A1000202 /* SettingsStoreTests.swift in Sources */,
 				A1000203 /* SettingsManagerTests.swift in Sources */,
 				A1000204 /* ProfileNormalizationTests.swift in Sources */,
+				A1000300 /* WidgetTypesTests.swift in Sources */,
+				A1000301 /* GraphHistoryTests.swift in Sources */,
+				A1000302 /* AerospaceDecodingTests.swift in Sources */,
+				A1000303 /* ThemeColorTests.swift in Sources */,
 				A1000210 /* Settings.swift in Sources */,
 				A1000211 /* SettingsCodec.swift in Sources */,
 				A1000212 /* SettingsStore.swift in Sources */,
