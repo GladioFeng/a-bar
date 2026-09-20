@@ -66,6 +66,18 @@
 		A1000084 /* RefreshWidgetCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000084 /* RefreshWidgetCommand.swift */; };
 		A1000085 /* XBarParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000085 /* XBarParser.swift */; };
 		A1000100 /* XBarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000100 /* XBarMenu.swift */; };
+		A1000110 /* WidgetDragPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000110 /* WidgetDragPayload.swift */; };
+		A1000111 /* WidgetReorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000111 /* WidgetReorder.swift */; };
+		A1000112 /* UserWidgetIndexRemapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000112 /* UserWidgetIndexRemapper.swift */; };
+		A1000113 /* ProfileNameValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000113 /* ProfileNameValidator.swift */; };
+		A1000221 /* WidgetDragPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000110 /* WidgetDragPayload.swift */; };
+		A1000222 /* WidgetReorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000111 /* WidgetReorder.swift */; };
+		A1000223 /* UserWidgetIndexRemapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000112 /* UserWidgetIndexRemapper.swift */; };
+		A1000224 /* ProfileNameValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000113 /* ProfileNameValidator.swift */; };
+		A1000308 /* WidgetDragPayloadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000308 /* WidgetDragPayloadTests.swift */; };
+		A1000309 /* WidgetReorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000309 /* WidgetReorderTests.swift */; };
+		A1000310 /* UserWidgetIndexRemapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000310 /* UserWidgetIndexRemapperTests.swift */; };
+		A1000311 /* ProfileNameValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000311 /* ProfileNameValidatorTests.swift */; };
 		A1000090 /* sfsymbols.txt in Resources */ = {isa = PBXBuildFile; fileRef = E1000012 /* sfsymbols.txt */; };
 		E1000014 /* a-bar.sdef in Resources */ = {isa = PBXBuildFile; fileRef = E1000013 /* a-bar.sdef */; };
 		A1000200 /* SettingsFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000200 /* SettingsFixtures.swift */; };
@@ -154,6 +166,14 @@
 		B1000084 /* RefreshWidgetCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefreshWidgetCommand.swift; sourceTree = "<group>"; };
 		B1000085 /* XBarParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XBarParser.swift; sourceTree = "<group>"; };
 		B1000100 /* XBarMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XBarMenu.swift; sourceTree = "<group>"; };
+		B1000110 /* WidgetDragPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetDragPayload.swift"; sourceTree = "<group>"; };
+		B1000111 /* WidgetReorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetReorder.swift"; sourceTree = "<group>"; };
+		B1000112 /* UserWidgetIndexRemapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserWidgetIndexRemapper.swift"; sourceTree = "<group>"; };
+		B1000113 /* ProfileNameValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProfileNameValidator.swift"; sourceTree = "<group>"; };
+		B1000308 /* WidgetDragPayloadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetDragPayloadTests.swift"; sourceTree = "<group>"; };
+		B1000309 /* WidgetReorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetReorderTests.swift"; sourceTree = "<group>"; };
+		B1000310 /* UserWidgetIndexRemapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserWidgetIndexRemapperTests.swift"; sourceTree = "<group>"; };
+		B1000311 /* ProfileNameValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProfileNameValidatorTests.swift"; sourceTree = "<group>"; };
 		D1000001 /* a-bar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "a-bar.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E1000010 /* a-bar.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "a-bar.entitlements"; sourceTree = "<group>"; };
 		E1000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -213,6 +233,7 @@
 				E1000010 /* a-bar.entitlements */,
 				E1000011 /* Info.plist */,
 				E1000013 /* a-bar.sdef */,
+				G1000009 /* Logic */,
 				G1000003 /* Models */,
 				G1000004 /* Services */,
 				G1000005 /* Widgets */,
@@ -368,6 +389,17 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		G1000009 /* Logic */ = {
+			isa = PBXGroup;
+			children = (
+				B1000110 /* WidgetDragPayload.swift */,
+				B1000111 /* WidgetReorder.swift */,
+				B1000112 /* UserWidgetIndexRemapper.swift */,
+				B1000113 /* ProfileNameValidator.swift */,
+			);
+			path = Logic;
+			sourceTree = "<group>";
+		};
 		G1000100 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -393,6 +425,10 @@
 				B1000305 /* FormattingTests.swift */,
 				B1000306 /* ShellExecutorTests.swift */,
 				B1000307 /* XBarParserTests.swift */,
+				B1000308 /* WidgetDragPayloadTests.swift */,
+				B1000309 /* WidgetReorderTests.swift */,
+				B1000310 /* UserWidgetIndexRemapperTests.swift */,
+				B1000311 /* ProfileNameValidatorTests.swift */,
 			);
 			path = "a-barTests";
 			sourceTree = "<group>";
@@ -543,6 +579,10 @@
 				C1000006 /* AerospaceProcessWidget.swift in Sources */,
 				A1000085 /* XBarParser.swift in Sources */,
 				A1000100 /* XBarMenu.swift in Sources */,
+				A1000110 /* WidgetDragPayload.swift in Sources */,
+				A1000111 /* WidgetReorder.swift in Sources */,
+				A1000112 /* UserWidgetIndexRemapper.swift in Sources */,
+				A1000113 /* ProfileNameValidator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -563,6 +603,10 @@
 				A1000305 /* FormattingTests.swift in Sources */,
 				A1000306 /* ShellExecutorTests.swift in Sources */,
 				A1000307 /* XBarParserTests.swift in Sources */,
+				A1000308 /* WidgetDragPayloadTests.swift in Sources */,
+				A1000309 /* WidgetReorderTests.swift in Sources */,
+				A1000310 /* UserWidgetIndexRemapperTests.swift in Sources */,
+				A1000311 /* ProfileNameValidatorTests.swift in Sources */,
 				A1000210 /* Settings.swift in Sources */,
 				A1000211 /* SettingsCodec.swift in Sources */,
 				A1000212 /* SettingsStore.swift in Sources */,
@@ -574,6 +618,10 @@
 				A1000218 /* Extensions.swift in Sources */,
 				A1000219 /* ShellExecutor.swift in Sources */,
 				A1000220 /* XBarParser.swift in Sources */,
+				A1000221 /* WidgetDragPayload.swift in Sources */,
+				A1000222 /* WidgetReorder.swift in Sources */,
+				A1000223 /* UserWidgetIndexRemapper.swift in Sources */,
+				A1000224 /* ProfileNameValidator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -22,6 +22,9 @@ All notable changes to this project will be documented in this file.
 - test: cover yabai state filtering, the formatting and colour helpers, and shell command execution
 - fix: a custom widget script whose output uses Windows line endings now shows its dropdown instead of printing the whole script into the bar with stray characters
 - test: cover xbar-style script output parsing, and split the parser from its menu building
+- fix: a new profile name that differs from an existing one only by surrounding spaces is now recognised as a duplicate instead of being accepted
+- refactor: the layout builder's drag payload, reordering and custom-widget index handling moved out of the views into tested logic
+- test: cover layout drag and drop, widget reordering, custom-widget index remapping and profile name validation
 
 ## v1.5.2 - 2026-09-20
 

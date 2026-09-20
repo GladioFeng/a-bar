@@ -926,93 +926,16 @@ struct CustomWidgetSettingsView: View {
     .navigationTitle("Custom Widgets")
   }
 
-  // Helper function to update user widget indices after removal
+  /// Deleting a custom widget shifts every later one down, so placed instances have to follow
+  /// or they end up running a different script.
   private func updateUserWidgetIndicesInLayout(removedIndex: Int) {
-    var layout = settings.draftLayout
-
-    for displayIndex in 0..<layout.displays.count {
-      // Update top bar
-      if var topBar = layout.displays[displayIndex].topBar {
-        topBar.left = updateUserWidgetIndices(in: topBar.left, removedIndex: removedIndex)
-        topBar.center = updateUserWidgetIndices(in: topBar.center, removedIndex: removedIndex)
-        topBar.right = updateUserWidgetIndices(in: topBar.right, removedIndex: removedIndex)
-        layout.displays[displayIndex].topBar = topBar
-      }
-
-      // Update bottom bar
-      if var bottomBar = layout.displays[displayIndex].bottomBar {
-        bottomBar.left = updateUserWidgetIndices(in: bottomBar.left, removedIndex: removedIndex)
-        bottomBar.center = updateUserWidgetIndices(in: bottomBar.center, removedIndex: removedIndex)
-        bottomBar.right = updateUserWidgetIndices(in: bottomBar.right, removedIndex: removedIndex)
-        layout.displays[displayIndex].bottomBar = bottomBar
-      }
-    }
-
-    settings.draftLayout = layout
+    settings.draftLayout = UserWidgetIndexRemapper.removing(
+      removedIndex, from: settings.draftLayout)
   }
 
-  private func updateUserWidgetIndices(in widgets: [WidgetInstance], removedIndex: Int)
-    -> [WidgetInstance]
-  {
-    return widgets.compactMap { widget in
-      guard widget.identifier == .userWidget else { return widget }
-      guard let index = widget.userWidgetIndex else { return widget }
-
-      if index == removedIndex {
-        return nil  // Remove this widget
-      } else if index > removedIndex {
-        var updated = widget
-        updated.userWidgetIndex = index - 1
-        return updated
-      }
-      return widget
-    }
-  }
-
-  // Helper function to update user widget indices after move/reorder
   private func updateUserWidgetIndicesAfterMove(oldToNewIndex: [Int: Int]) {
-    var layout = settings.draftLayout
-
-    for displayIndex in 0..<layout.displays.count {
-      // Update top bar
-      if var topBar = layout.displays[displayIndex].topBar {
-        topBar.left = updateUserWidgetIndicesForMove(in: topBar.left, oldToNewIndex: oldToNewIndex)
-        topBar.center = updateUserWidgetIndicesForMove(
-          in: topBar.center, oldToNewIndex: oldToNewIndex)
-        topBar.right = updateUserWidgetIndicesForMove(
-          in: topBar.right, oldToNewIndex: oldToNewIndex)
-        layout.displays[displayIndex].topBar = topBar
-      }
-
-      // Update bottom bar
-      if var bottomBar = layout.displays[displayIndex].bottomBar {
-        bottomBar.left = updateUserWidgetIndicesForMove(
-          in: bottomBar.left, oldToNewIndex: oldToNewIndex)
-        bottomBar.center = updateUserWidgetIndicesForMove(
-          in: bottomBar.center, oldToNewIndex: oldToNewIndex)
-        bottomBar.right = updateUserWidgetIndicesForMove(
-          in: bottomBar.right, oldToNewIndex: oldToNewIndex)
-        layout.displays[displayIndex].bottomBar = bottomBar
-      }
-    }
-
-    settings.draftLayout = layout
-  }
-
-  private func updateUserWidgetIndicesForMove(
-    in widgets: [WidgetInstance], oldToNewIndex: [Int: Int]
-  ) -> [WidgetInstance] {
-    return widgets.map { widget in
-      guard widget.identifier == .userWidget,
-        let oldIndex = widget.userWidgetIndex,
-        let newIndex = oldToNewIndex[oldIndex]
-      else {
-        return widget
-      }
-      var updated = widget
-      updated.userWidgetIndex = newIndex
-      return updated
-    }
+    settings.draftLayout = UserWidgetIndexRemapper.remapping(
+      oldToNewIndex, in: settings.draftLayout)
   }
 }
 

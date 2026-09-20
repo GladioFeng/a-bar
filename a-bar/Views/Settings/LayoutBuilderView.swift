@@ -847,7 +847,7 @@ struct WidgetSectionView: View {
               onChanged: onWidgetsChanged
             )
             .onDrag {
-              NSItemProvider(object: "widget:\(widget.id.uuidString)" as NSString)
+              NSItemProvider(object: WidgetDragPayload.instance(widget.id).encoded as NSString)
             }
             .onDrop(
               of: [UTType.text, UTType.plainText],
@@ -913,22 +913,10 @@ struct WidgetSectionView: View {
   }
 
   private func handleWidgetDrop(payload: String) {
-    // Check if it's a user widget
-    if payload.hasPrefix("userWidget:") {
-      let indexStr = payload.replacingOccurrences(of: "userWidget:", with: "")
-      if let userWidgetIndex = Int(indexStr) {
-        let instance = WidgetInstance(
-          identifier: .userWidget,
-          userWidgetIndex: userWidgetIndex
-        )
-        widgets.append(instance)
-        onWidgetsChanged?()
-      }
-    } else if let identifier = WidgetIdentifier(rawValue: payload) {
-      let instance = WidgetInstance(identifier: identifier)
-      widgets.append(instance)
-      onWidgetsChanged?()
-    }
+    guard let instance = WidgetDragPayload(payload)?.newInstance else { return }
+
+    widgets.append(instance)
+    onWidgetsChanged?()
   }
 }
 
@@ -1022,53 +1010,29 @@ struct WidgetInstanceDropDelegate: DropDelegate {
   }
 
   private func handlePayload(_ payload: String, insertAt: Int) {
-    // Check if it's a widget move (from within same section or another section)
-    if payload.hasPrefix("widget:") {
-      let idStr = payload.replacingOccurrences(of: "widget:", with: "")
-      if let id = UUID(uuidString: idStr) {
-        // Check if widget is in current section
-        if let currentIndex = widgets.firstIndex(where: { $0.id == id }) {
-          // Reorder within same section
-          withAnimation {
-            let moved = widgets.remove(at: currentIndex)
-            let toIndex = insertAt > currentIndex ? insertAt - 1 : insertAt
-            let safeIndex = min(max(0, toIndex), widgets.count)
-            widgets.insert(moved, at: safeIndex)
-          }
-        } else if let findWidget = findWidget,
-                  let (widget, sourceSection) = findWidget(id),
-                  let removeWidget = removeWidget {
-          // Move from another section
-          withAnimation {
-            removeWidget(id, sourceSection)
-            widgets.insert(widget, at: min(max(0, insertAt), widgets.count))
-          }
+    guard let payload = WidgetDragPayload(payload) else { return }
+
+    switch payload {
+    case .instance(let id):
+      if widgets.contains(where: { $0.id == id }) {
+        withAnimation {
+          widgets = WidgetReorder.moving(widgets, id: id, to: insertAt)
         }
-        onWidgetsChanged?()
+      } else if let findWidget, let (widget, sourceSection) = findWidget(id), let removeWidget {
+        withAnimation {
+          removeWidget(id, sourceSection)
+          widgets = WidgetReorder.inserting(widget, into: widgets, at: insertAt)
+        }
+      } else {
         return
       }
+
+    case .userWidget, .catalog:
+      guard let instance = payload.newInstance else { return }
+      widgets = WidgetReorder.inserting(instance, into: widgets, at: insertAt)
     }
 
-    // Check if it's a user widget from the available widgets list
-    if payload.hasPrefix("userWidget:") {
-      let indexStr = payload.replacingOccurrences(of: "userWidget:", with: "")
-      if let userWidgetIndex = Int(indexStr) {
-        let instance = WidgetInstance(
-          identifier: .userWidget,
-          userWidgetIndex: userWidgetIndex
-        )
-        widgets.insert(instance, at: min(max(0, insertAt), widgets.count))
-        onWidgetsChanged?()
-        return
-      }
-    }
-
-    // Standard widget from the available widgets list
-    if let identifier = WidgetIdentifier(rawValue: payload) {
-      let instance = WidgetInstance(identifier: identifier)
-      widgets.insert(instance, at: min(max(0, insertAt), widgets.count))
-      onWidgetsChanged?()
-    }
+    onWidgetsChanged?()
   }
 
   func dropEntered(info: DropInfo) {
@@ -1146,13 +1110,10 @@ struct DraggableWidgetView: View {
     .background(color.opacity(0.1))
     .cornerRadius(4)
     .onDrag {
-      let payload: String
-      if let index = userWidgetIndex {
-        payload = "userWidget:\(index)"
-      } else {
-        payload = identifier.rawValue
-      }
-      let provider = NSItemProvider(object: payload as NSString)
+      let payload =
+        userWidgetIndex.map { WidgetDragPayload.userWidget($0) }
+        ?? .catalog(identifier)
+      let provider = NSItemProvider(object: payload.encoded as NSString)
       provider.suggestedName = name
       return provider
     }
@@ -1298,11 +1259,11 @@ struct NewProfileSheet: View {
   @State private var copyFromCurrent = true
 
   private var isNameValid: Bool {
-    !profileName.trimmingCharacters(in: .whitespaces).isEmpty
+    ProfileNameValidator.isPresent(profileName)
   }
 
   private var isNameUnique: Bool {
-    !profileManager.profiles.contains { $0.name.lowercased() == profileName.lowercased() }
+    ProfileNameValidator.isUnique(profileName, among: profileManager.profiles)
   }
 
   /// The profile to copy from (the one being edited)
@@ -1375,14 +1336,11 @@ struct RenameProfileSheet: View {
   }
 
   private var isNameValid: Bool {
-    !newName.trimmingCharacters(in: .whitespaces).isEmpty
+    ProfileNameValidator.isPresent(newName)
   }
 
   private var isNameUnique: Bool {
-    let trimmedName = newName.trimmingCharacters(in: .whitespaces).lowercased()
-    let currentName = editingProfile?.name.lowercased() ?? ""
-    return trimmedName == currentName
-      || !profileManager.profiles.contains { $0.name.lowercased() == trimmedName }
+    ProfileNameValidator.isUnique(newName, among: profileManager.profiles, excluding: editingProfile?.id)
   }
 
   var body: some View {
