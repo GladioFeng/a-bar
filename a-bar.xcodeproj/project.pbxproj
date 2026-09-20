@@ -168,6 +168,9 @@
 		A1000329 /* LaunchAtLoginReconcilerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000329 /* LaunchAtLoginReconcilerTests.swift */; };
 		A1000330 /* BarWindowPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000330 /* BarWindowPlanTests.swift */; };
 		A1000331 /* WindowManagerServicesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000331 /* WindowManagerServicesTests.swift */; };
+		A1000248 /* XBarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000100 /* XBarMenu.swift */; };
+		A1000332 /* XBarMenuBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000332 /* XBarMenuBuilderTests.swift */; };
+		A1000333 /* XBarColorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000333 /* XBarColorTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -298,6 +301,8 @@
 		B1000329 /* LaunchAtLoginReconcilerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginReconcilerTests.swift; sourceTree = "<group>"; };
 		B1000330 /* BarWindowPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarWindowPlanTests.swift; sourceTree = "<group>"; };
 		B1000331 /* WindowManagerServicesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowManagerServicesTests.swift; sourceTree = "<group>"; };
+		B1000332 /* XBarMenuBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "XBarMenuBuilderTests.swift"; sourceTree = "<group>"; };
+		B1000333 /* XBarColorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "XBarColorTests.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -538,6 +543,8 @@
 		G1000200 /* a-barTests */ = {
 			isa = PBXGroup;
 			children = (
+				B1000333 /* XBarColorTests.swift */,
+				B1000332 /* XBarMenuBuilderTests.swift */,
 				B1000200 /* SettingsFixtures.swift */,
 				B1000201 /* SettingsCodecTests.swift */,
 				B1000202 /* SettingsStoreTests.swift */,
@@ -757,6 +764,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000333 /* XBarColorTests.swift in Sources */,
+				A1000332 /* XBarMenuBuilderTests.swift in Sources */,
+				A1000248 /* XBarMenu.swift in Sources */,
 				A1000200 /* SettingsFixtures.swift in Sources */,
 				A1000201 /* SettingsCodecTests.swift in Sources */,
 				A1000202 /* SettingsStoreTests.swift in Sources */,
