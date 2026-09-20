@@ -6,12 +6,17 @@ class AppIconProvider {
     static let shared = AppIconProvider()
 
     private var iconCache: [String: NSImage] = [:]
+    private var resizedIconCache: [String: [CGFloat: NSImage]] = [:]
     private let queue = DispatchQueue(label: "com.abar.icon-provider", attributes: .concurrent)
 
     /// Apps currently being looked up via mdfind to avoid duplicate searches.
     private var pendingLookups = Set<String>()
 
-    private init() {}
+    private let findAppPath: (String) -> String?
+
+    init(findAppPath: @escaping (String) -> String? = AppIconProvider.findAppPathViaMdfind) {
+        self.findAppPath = findAppPath
+    }
 
     /// Get the icon for an application by name.
     /// Returns a cached icon immediately, or kicks off an async lookup and
@@ -35,19 +40,14 @@ class AppIconProvider {
         // will eventually be filled for the next render.
         queue.async(flags: .barrier) {
             guard !self.pendingLookups.contains(appName) else { return }
+            guard self.iconCache[appName] == nil else { return }
             self.pendingLookups.insert(appName)
-        }
 
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self else { return }
-            if let path = self.findAppPathViaMdfind(appName: appName) {
-                let icon = NSWorkspace.shared.icon(forFile: path)
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self else { return }
+                let icon = self.findAppPath(appName).map { NSWorkspace.shared.icon(forFile: $0) }
                 self.queue.async(flags: .barrier) {
-                    self.iconCache[appName] = icon
-                    self.pendingLookups.remove(appName)
-                }
-            } else {
-                self.queue.async(flags: .barrier) {
+                    if let icon { self.iconCache[appName] = icon }
                     self.pendingLookups.remove(appName)
                 }
             }
@@ -58,8 +58,8 @@ class AppIconProvider {
 
     /// Get a SwiftUI Image for an application
     func iconImage(forApp appName: String, size: CGFloat = 16) -> Image {
-        if let nsImage = icon(forApp: appName) {
-            return Image(nsImage: resizedIcon(nsImage, to: size))
+        if let nsImage = resizedIcon(forApp: appName, to: size) {
+            return Image(nsImage: nsImage)
         }
         return Image(systemName: "app.fill")
     }
@@ -94,7 +94,7 @@ class AppIconProvider {
     }
 
     /// Slow fallback via mdfind – **never call on the main thread**.
-    private func findAppPathViaMdfind(appName: String) -> String? {
+    private static func findAppPathViaMdfind(appName: String) -> String? {
         let command = "mdfind 'kMDItemKind == \"Application\" && kMDItemDisplayName == \"\(appName)\"' | head -1"
         let result = ShellExecutor.runSync(command, timeout: 5)
         let path = result.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -105,7 +105,11 @@ class AppIconProvider {
         return path
     }
 
-    private func resizedIcon(_ image: NSImage, to size: CGFloat) -> NSImage {
+    func resizedIcon(forApp appName: String, to size: CGFloat) -> NSImage? {
+        if let cached = queue.sync(execute: { resizedIconCache[appName]?[size] }) {
+            return cached
+        }
+        guard let image = icon(forApp: appName) else { return nil }
         let newSize = NSSize(width: size, height: size)
         let newImage = NSImage(size: newSize)
 
@@ -119,6 +123,9 @@ class AppIconProvider {
         )
         newImage.unlockFocus()
 
+        queue.async(flags: .barrier) {
+            self.resizedIconCache[appName, default: [:]][size] = newImage
+        }
         return newImage
     }
 }

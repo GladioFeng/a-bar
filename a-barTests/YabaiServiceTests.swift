@@ -10,6 +10,7 @@
 import AppKit
 import Combine
 import XCTest
+import Darwin
 
 final class YabaiServiceTests: XCTestCase {
     private var directory: URL!

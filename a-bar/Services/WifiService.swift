@@ -36,6 +36,8 @@ final class WifiService: ObservableObject {
 
   private var refreshTimer: Timer?
   private var isStarted = false
+  private var refreshGeneration = 0
+  private var scanWorkItem: DispatchWorkItem?
   private var isPopoverOpen = false
   /// SSIDs macOS already has credentials for, so a click can join them straight away
   /// instead of asking for a passphrase the keychain already holds.
@@ -82,6 +84,11 @@ final class WifiService: ObservableObject {
 
   func stop() {
     isStarted = false
+    refreshGeneration += 1
+    isPopoverOpen = false
+    scanWorkItem?.cancel()
+    scanWorkItem = nil
+    isScanning = false
     refreshTimer?.invalidate()
     refreshTimer = nil
     try? client.stopMonitoringAllEvents()
@@ -142,6 +149,7 @@ final class WifiService: ObservableObject {
   /// Read power state and the current association straight from CoreWLAN. These are
   /// in-process property reads, unlike the scan, so they are safe on the main thread.
   func refreshState() {
+    guard isStarted else { return }
     var next = info
     next.locationAuthorized = location.isAuthorized
 
@@ -191,6 +199,7 @@ final class WifiService: ObservableObject {
   /// timer-driven: an idle bar with a closed popover never scans, and macOS rate-limits
   /// repeated scans anyway.
   func scanIfNeeded(force: Bool = false) {
+    guard isStarted else { return }
     guard info.hasInterface, info.isPoweredOn else { return }
     guard force || isPopoverOpen else { return }
     guard !isScanning else { return }
@@ -205,14 +214,16 @@ final class WifiService: ObservableObject {
     isScanning = true
     lastScanDate = Date()
     let name = interfaceName
+    let generation = refreshGeneration
 
-    workQueue.async { [weak self] in
+    let work = DispatchWorkItem { [weak self] in
       // Re-resolve on this queue rather than capturing the main-thread interface.
       let interface = name.flatMap { CWWiFiClient.shared().interface(withName: $0) }
       let networks = (try? interface?.scanForNetworks(withSSID: nil, includeHidden: false))
 
       DispatchQueue.main.async {
-        guard let self = self else { return }
+        guard let self, self.isStarted, generation == self.refreshGeneration else { return }
+        self.scanWorkItem = nil
         self.isScanning = false
         guard let networks = networks else {
           self.readCachedScanResults()
@@ -224,11 +235,14 @@ final class WifiService: ObservableObject {
         self.publish(next)
       }
     }
+    scanWorkItem = work
+    workQueue.async(execute: work)
   }
 
   /// Paint whatever CoreWLAN already knows, instantly. Used while a real scan is in
   /// flight, and when the throttle rejects one.
   private func readCachedScanResults() {
+    guard isStarted else { return }
     guard let cached = currentInterface?.cachedScanResults() else { return }
     var next = info
     next.networks = WifiService.dedupe(cached, currentSSID: info.ssid, knownSSIDs: knownSSIDs)
@@ -269,8 +283,8 @@ final class WifiService: ObservableObject {
   // MARK: - Popover-driven cadence
 
   func setPopoverOpen(_ open: Bool) {
-    isPopoverOpen = open
-    guard open else { return }
+    isPopoverOpen = open && isStarted
+    guard isPopoverOpen else { return }
     // Asking for the grant here rather than at launch means a user who never opens the
     // popover never sees the prompt.
     location.requestIfNeeded()
@@ -283,11 +297,14 @@ final class WifiService: ObservableObject {
   /// Read the preferred-networks list. Unlike SSIDs from a scan, `networksetup` never
   /// redacts these, so this works even when Location Services is denied.
   private func refreshKnownNetworks() {
+    guard isStarted else { return }
     guard let device = interfaceName else { return }
-    Task {
+    let generation = refreshGeneration
+    Task { @MainActor in
+      guard isStarted, generation == refreshGeneration else { return }
       let output = try? await ShellExecutor.run(
         "networksetup -listpreferredwirelessnetworks \(WifiService.shellQuoted(device))")
-      guard let output = output else { return }
+      guard isStarted, generation == refreshGeneration, let output else { return }
       // First line is the "Preferred networks on enN:" header; the rest are tab-indented.
       let names =
         output
@@ -295,10 +312,8 @@ final class WifiService: ObservableObject {
         .dropFirst()
         .map { $0.trimmingCharacters(in: .whitespaces) }
         .filter { !$0.isEmpty }
-      await MainActor.run {
-        self.knownSSIDs = Set(names)
-        self.readCachedScanResults()
-      }
+      knownSSIDs = Set(names)
+      readCachedScanResults()
     }
   }
 
@@ -309,18 +324,21 @@ final class WifiService: ObservableObject {
   func togglePower() {
     guard let device = interfaceName else { return }
     let turnOn = !info.isPoweredOn
+    let generation = refreshGeneration
 
     Task {
       _ = try? await ShellExecutor.run(
         "networksetup -setairportpower \(WifiService.shellQuoted(device)) "
           + (turnOn ? "on" : "off"))
       await MainActor.run {
+        guard self.isStarted, generation == self.refreshGeneration else { return }
         self.refreshState()
         if turnOn {
           // The radio needs a beat before it can see anything.
           DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.refreshState()
-            self?.scanIfNeeded(force: true)
+            guard let self, self.isStarted, generation == self.refreshGeneration else { return }
+            self.refreshState()
+            self.scanIfNeeded(force: true)
           }
         }
       }
@@ -348,6 +366,7 @@ final class WifiService: ObservableObject {
     startPendingWatchdog(for: ssid)
 
     let name = interfaceName
+    let generation = refreshGeneration
     workQueue.async { [weak self] in
       let interface = name.flatMap { CWWiFiClient.shared().interface(withName: $0) }
       var failure: String?
@@ -385,6 +404,7 @@ final class WifiService: ObservableObject {
       DispatchQueue.main.async {
         guard let self = self else { return }
         self.pendingSSIDs.remove(ssid)
+        guard self.isStarted, generation == self.refreshGeneration else { return }
         self.lastError = failure
         if let failure = failure {
           print("Wi-Fi: join failed for \(ssid): \(failure)")
@@ -409,11 +429,13 @@ final class WifiService: ObservableObject {
     startPendingWatchdog(for: ssid)
 
     let name = interfaceName
+    let generation = refreshGeneration
     workQueue.async { [weak self] in
       name.flatMap { CWWiFiClient.shared().interface(withName: $0) }?.disassociate()
       DispatchQueue.main.async {
         guard let self = self else { return }
         self.pendingSSIDs.remove(ssid)
+        guard self.isStarted, generation == self.refreshGeneration else { return }
         self.refreshState()
       }
     }

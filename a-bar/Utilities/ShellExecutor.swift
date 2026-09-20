@@ -23,11 +23,15 @@ enum ShellExecutor {
     }
 
     private static func makeProcess(command: String, stdout: Any?, stderr: Any?) -> Process {
+        makeProcess(executable: "/bin/zsh", arguments: ["-c", command], stdout: stdout, stderr: stderr)
+    }
+
+    private static func makeProcess(executable: String, arguments: [String], stdout: Any?, stderr: Any?) -> Process {
         let process = Process()
         process.standardOutput = stdout
         process.standardError = stderr
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-c", command]
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
         process.environment = shellEnvironment()
         return process
     }
@@ -80,11 +84,31 @@ enum ShellExecutor {
     /// SIGTERM (then SIGKILL) when the deadline expires.
     @discardableResult
     static func run(_ command: String, timeout: TimeInterval = defaultTimeout) async throws -> String {
+        let pipe = Pipe()
+        return try await run(makeProcess(command: command, stdout: pipe, stderr: pipe), pipe: pipe, timeout: timeout)
+    }
+
+    /// Execute structured arguments literally, without starting a shell.
+    @discardableResult
+    static func run(executable: String, arguments: [String], timeout: TimeInterval = defaultTimeout) async throws -> String {
+        var path = (executable as NSString).expandingTildeInPath
+        if !path.contains("/") {
+            let candidates = (shellEnvironment()["PATH"] ?? "").split(separator: ":", omittingEmptySubsequences: false)
+            guard let resolved = candidates.map({ URL(fileURLWithPath: String($0)).appendingPathComponent(path).path })
+                .first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(ENOENT),
+                              userInfo: [NSLocalizedDescriptionKey: "Executable not found: \(executable)"])
+            }
+            path = resolved
+        }
+        let pipe = Pipe()
+        let process = makeProcess(executable: path, arguments: arguments, stdout: pipe, stderr: pipe)
+        return try await run(process, pipe: pipe, timeout: timeout, checkExit: true)
+    }
+
+    private static func run(_ process: Process, pipe: Pipe, timeout: TimeInterval, checkExit: Bool = false) async throws -> String {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let pipe = Pipe()
-                let process = makeProcess(command: command, stdout: pipe, stderr: pipe)
-
                 do {
                     try process.run()
                 } catch {
@@ -97,7 +121,14 @@ enum ShellExecutor {
                 defer { timer.cancel() }
 
                 process.waitUntilExit()
-                continuation.resume(returning: output.string())
+                let result = output.string()
+                if checkExit && process.terminationStatus != 0 {
+                    continuation.resume(throwing: NSError(
+                        domain: "ShellExecutor", code: Int(process.terminationStatus),
+                        userInfo: [NSLocalizedDescriptionKey: "\(process.executableURL!.lastPathComponent) exited with status \(process.terminationStatus): \(result)"]))
+                } else {
+                    continuation.resume(returning: result)
+                }
             }
         }
     }

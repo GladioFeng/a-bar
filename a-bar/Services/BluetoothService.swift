@@ -35,6 +35,8 @@ final class BluetoothService: ObservableObject {
   private var minorTypeCache: [String: String] = [:]
   private var isPopoverOpen = false
   private var isFetchingBattery = false
+  private var isStarted = false
+  private var refreshGeneration = 0
 
   private let settingsManager = SettingsManager.shared
   private let workQueue = DispatchQueue(label: "com.a-bar.bluetooth", qos: .userInitiated)
@@ -52,12 +54,18 @@ final class BluetoothService: ObservableObject {
   // MARK: - Lifecycle
 
   func start() {
+    let wasStarted = isStarted
+    isStarted = true
     refreshDevices()
-    registerConnectNotification()
+    if !wasStarted { registerConnectNotification() }
     startTimers()
   }
 
   func stop() {
+    isStarted = false
+    refreshGeneration += 1
+    isPopoverOpen = false
+    isFetchingBattery = false
     refreshTimer?.invalidate()
     refreshTimer = nil
     batteryTimer?.invalidate()
@@ -96,6 +104,7 @@ final class BluetoothService: ObservableObject {
   /// Read power state and the paired device list straight from IOBluetooth.
   /// Cheap enough to run on the main thread; `system_profiler` is not.
   func refreshDevices() {
+    guard isStarted else { return }
     var next = BluetoothInfo()
     next.canTogglePower = BluetoothService.setPowerState != nil
 
@@ -151,20 +160,22 @@ final class BluetoothService: ObservableObject {
   /// the popover is open, when the user opted into showing battery in the bar,
   /// or shortly after a connection change.
   func refreshBatteryLevels(force: Bool = false) {
+    guard isStarted else { return }
     guard info.isPoweredOn, !info.connectedDevices.isEmpty else { return }
     guard force || isPopoverOpen || settings.showBatteryInBar else { return }
     guard !isFetchingBattery else { return }
     isFetchingBattery = true
+    let generation = refreshGeneration
 
-    Task {
+    Task { @MainActor in
+      guard isStarted, generation == refreshGeneration else { return }
       let parsed = await BluetoothService.fetchBatteryLevels()
-      await MainActor.run {
-        self.isFetchingBattery = false
-        guard let parsed = parsed else { return }
-        self.batteryCache = parsed.battery
-        self.minorTypeCache = parsed.minorTypes
-        self.refreshDevices()
-      }
+      guard isStarted, generation == refreshGeneration else { return }
+      isFetchingBattery = false
+      guard let parsed else { return }
+      batteryCache = parsed.battery
+      minorTypeCache = parsed.minorTypes
+      refreshDevices()
     }
   }
 
@@ -172,8 +183,11 @@ final class BluetoothService: ObservableObject {
   /// if the popover is closed and the user has not opted into battery in the
   /// bar, nobody is looking, so an idle bar still never forks a process.
   private func scheduleBatteryRefresh(after delay: TimeInterval) {
+    guard isStarted else { return }
+    let generation = refreshGeneration
     DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-      self?.refreshBatteryLevels()
+      guard let self, self.isStarted, generation == self.refreshGeneration else { return }
+      self.refreshBatteryLevels()
     }
   }
 
@@ -264,8 +278,8 @@ final class BluetoothService: ObservableObject {
   // MARK: - Popover-driven cadence
 
   func setPopoverOpen(_ open: Bool) {
-    isPopoverOpen = open
-    if open {
+    isPopoverOpen = open && isStarted
+    if isPopoverOpen {
       refreshDevices()
       refreshBatteryLevels(force: true)
     }
@@ -299,9 +313,11 @@ final class BluetoothService: ObservableObject {
       return
     }
     setPowerState(info.isPoweredOn ? 0 : 1)
+    let generation = refreshGeneration
     // The daemon applies the change asynchronously; re-read shortly after.
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-      self?.refreshDevices()
+      guard let self, self.isStarted, generation == self.refreshGeneration else { return }
+      self.refreshDevices()
     }
   }
 
@@ -317,6 +333,7 @@ final class BluetoothService: ObservableObject {
     let address = device.address
     let id = device.id
     let shouldConnect = !device.isConnected
+    let generation = refreshGeneration
     pendingAddresses.insert(id)
 
     // Watchdog: never let a row's spinner stick forever.
@@ -337,6 +354,7 @@ final class BluetoothService: ObservableObject {
             "Bluetooth: \(shouldConnect ? "connect" : "disconnect") failed for \(address) (\(status))"
           )
         }
+        guard self.isStarted, generation == self.refreshGeneration else { return }
         self.refreshDevices()
         // AirPods and friends publish battery a beat after the link comes up.
         self.scheduleBatteryRefresh(after: 2.5)

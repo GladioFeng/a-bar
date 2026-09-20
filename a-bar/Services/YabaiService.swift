@@ -189,19 +189,19 @@ class YabaiService: ObservableObject {
             await previous?.value
             if !register {
                 for (_, label) in Self.signalEvents {
-                    _ = try? await ShellExecutor.run("\(path) -m signal --remove \(label)")
+                    _ = try? await ShellExecutor.run(executable: path, arguments: ["-m", "signal", "--remove", label])
                 }
                 return
             }
             guard isStarted, generation == refreshGeneration else { return }
             do {
-                let output = try await ShellExecutor.run("\(path) -m signal --list")
+                let output = try await ShellExecutor.run(executable: path, arguments: ["-m", "signal", "--list"])
                 let signals = try JSONDecoder().decode([YabaiSignal].self, from: Data(output.utf8))
                 for (event, label) in Self.signalEvents {
                     // Replace old AppleScript actions too, not just missing labels.
                     if signals.contains(where: { $0.label == label && $0.action == signalAction }) { continue }
-                    try await ShellExecutor.run(
-                        "\(path) -m signal --add event=\(event) action=\"\(signalAction)\" label=\(label)")
+                    try await ShellExecutor.run(executable: path, arguments: [
+                        "-m", "signal", "--add", "event=\(event)", "action=\(signalAction)", "label=\(label)"])
                 }
                 guard isStarted, generation == refreshGeneration else { return }
                 if !signalsRegistered { signalsRegistered = true }
@@ -251,14 +251,14 @@ class YabaiService: ObservableObject {
 
     /// Process I/O and decoding stay off the main actor.
     private func fetch<T: Decodable>(_ collection: String, path: String) async throws -> T {
-        let output = try await ShellExecutor.run("\(path) -m query --\(collection)")
+        let output = try await ShellExecutor.run(executable: path, arguments: ["-m", "query", "--\(collection)"])
         return try JSONDecoder().decode(T.self, from: Data(cleanupJSON(output).utf8))
     }
 
     /// Focus on a specific space
     func goToSpace(_ index: Int) async {
         do {
-            try await ShellExecutor.run("\(yabaiPath) -m space --focus \(index)")
+            try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", "--focus", String(index)])
         } catch {
             await handleError(error)
         }
@@ -267,7 +267,7 @@ class YabaiService: ObservableObject {
     /// Rename a space
     func renameSpace(_ index: Int, label: String) async {
         do {
-            try await ShellExecutor.run("\(yabaiPath) -m space \(index) --label \"\(label)\"")
+            try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", String(index), "--label", label])
         } catch {
             await handleError(error)
         }
@@ -277,7 +277,7 @@ class YabaiService: ObservableObject {
     func createSpace(onDisplay displayIndex: Int) async {
         do {
             try await focusDisplay(displayIndex)
-            try await ShellExecutor.run("\(yabaiPath) -m space --create")
+            try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", "--create"])
         } catch {
             await handleError(error)
         }
@@ -287,7 +287,7 @@ class YabaiService: ObservableObject {
     func removeSpace(_ index: Int, onDisplay displayIndex: Int) async {
         do {
             try await focusDisplay(displayIndex)
-            try await ShellExecutor.run("\(yabaiPath) -m space \(index) --destroy")
+            try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", String(index), "--destroy"])
         } catch {
             await handleError(error)
         }
@@ -297,7 +297,7 @@ class YabaiService: ObservableObject {
     func swapSpace(_ index: Int, direction: SwapDirection) async {
         let targetIndex = direction == .left ? index - 1 : index + 1
         do {
-            try await ShellExecutor.run("\(yabaiPath) -m space \(index) --swap \(targetIndex)")
+            try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", String(index), "--swap", String(targetIndex)])
         } catch {
             await handleError(error)
         }
@@ -306,7 +306,7 @@ class YabaiService: ObservableObject {
     /// Focus on a specific window
     func focusWindow(_ id: Int) async {
         do {
-            try await ShellExecutor.run("\(yabaiPath) -m window --focus \(id)")
+            try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "window", "--focus", String(id)])
         } catch {
             await handleError(error)
         }
@@ -314,7 +314,7 @@ class YabaiService: ObservableObject {
 
     /// Focus on a specific display
     private func focusDisplay(_ index: Int) async throws {
-        try await ShellExecutor.run("\(yabaiPath) -m display --focus \(index)")
+        try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "display", "--focus", String(index)])
     }
 
     // Timer logic removed

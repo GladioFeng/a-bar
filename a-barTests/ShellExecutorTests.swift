@@ -69,6 +69,53 @@ final class ShellExecutorTests: XCTestCase {
 
   // MARK: - A widget script that fails must still report
 
+  func testDirectArgumentsStayLiteralAndExecutablePathsCanContainSpaces() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("a bar-\(UUID())")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let executable = directory.appendingPathComponent("print arguments")
+    try "#!/bin/sh\nexec /usr/bin/printf '<%s>\\n' \"$@\"\n".write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let values = ["", "two words", "'\";$HOME$(exit 7)\\"]
+    let output = try await ShellExecutor.run(executable: executable.path, arguments: values)
+    XCTAssertEqual(output, values.map { "<\($0)>\n" }.joined())
+    let foundOnPath = try await ShellExecutor.run(executable: "printf", arguments: ["%s", "found"])
+    XCTAssertEqual(foundOnPath, "found")
+  }
+
+  func testDirectFailuresThrowAndTheNextCommandStillRuns() async throws {
+    do {
+      try await ShellExecutor.run(executable: "/bin/sh", arguments: ["-c", "echo fixture-error >&2; exit 3"])
+      XCTFail("nonzero exit must throw")
+    } catch {
+      XCTAssertEqual((error as NSError).code, 3)
+      XCTAssertTrue(error.localizedDescription.contains("fixture-error"))
+    }
+    do {
+      try await ShellExecutor.run(executable: "/missing-a-bar-fixture", arguments: [])
+      XCTFail("launch failure must throw")
+    } catch {}
+    let output = try await ShellExecutor.run(executable: "/usr/bin/true", arguments: [])
+    XCTAssertEqual(output, "")
+  }
+
+  func testDirectOutputLargerThanThePipeBufferIsComplete() async throws {
+    let expected = String(repeating: "fixture\n", count: 12000)
+    let output = try await ShellExecutor.run(executable: "/usr/bin/printf", arguments: ["%s", expected])
+    XCTAssertEqual(output, expected)
+  }
+
+  func testDirectTimeoutThrowsAndAllowsRecovery() async throws {
+    let started = Date()
+    do {
+      try await ShellExecutor.run(executable: "/bin/sleep", arguments: ["30"], timeout: 0.05)
+      XCTFail("timed out process must throw")
+    } catch {}
+    XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+    let output = try await ShellExecutor.run(executable: "/usr/bin/true", arguments: [])
+    XCTAssertEqual(output, "")
+  }
+
   func testASuccessfulScriptReportsSuccess() async {
     let result = await ShellExecutor.runWidget("echo hi")
 
