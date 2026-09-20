@@ -121,13 +121,6 @@ class AppIconProvider {
 
         return newImage
     }
-
-    /// Clear the icon cache
-    func clearCache() {
-        queue.async(flags: .barrier) {
-            self.iconCache.removeAll()
-        }
-    }
 }
 
 struct AppIconView: View {

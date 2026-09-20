@@ -432,45 +432,8 @@ class UserWidgetManager: ObservableObject {
 
   private init() {}
 
-  private func isNameTaken(_ name: String, excludingId: UUID? = nil) -> Bool {
-    return widgets.contains { widget in
-      widget.name == name && widget.id != excludingId
-    }
-  }
-
-  func addWidget(_ config: UserWidgetDefinition) throws {
-    if isNameTaken(config.name) {
-      throw UserWidgetError.duplicateName(config.name)
-    }
-    settingsManager.update { $0.userWidgets.append(config) }
-  }
-
   func removeWidget(id: UUID) {
     settingsManager.update { $0.userWidgets.removeAll { $0.id == id } }
-  }
-
-  func updateWidget(_ config: UserWidgetDefinition) throws {
-    if isNameTaken(config.name, excludingId: config.id) {
-      throw UserWidgetError.duplicateName(config.name)
-    }
-
-    settingsManager.update { settings in
-      if let index = settings.userWidgets.firstIndex(where: { $0.id == config.id }) {
-        settings.userWidgets[index] = config
-      }
-    }
-  }
-
-  func moveWidget(from source: IndexSet, to destination: Int) {
-    settingsManager.update { settings in
-      // Offsets are checked against the copy being mutated: `update` runs this against both
-      // the running settings and the Preferences draft, which can hold different lists.
-      guard source.allSatisfy({ settings.userWidgets.indices.contains($0) }),
-        (0...settings.userWidgets.count).contains(destination)
-      else { return }
-
-      settings.userWidgets.move(fromOffsets: source, toOffset: destination)
-    }
   }
 
   @discardableResult

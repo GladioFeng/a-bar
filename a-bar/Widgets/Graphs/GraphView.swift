@@ -138,35 +138,3 @@ struct PieChartView: View {
         }
     }
 }
-
-/// A bar graph for showing current values
-struct BarGraphView: View {
-    let value: Double
-    let maxValue: Double
-    let fillColor: Color
-    let vertical: Bool
-
-    @EnvironmentObject var settings: SettingsManager
-
-    private var theme: ABarTheme {
-        ThemeManager.currentTheme(for: settings.settings.theme)
-    }
-
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: vertical ? .bottom : .leading) {
-                // Background
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(theme.minor.opacity(0.2))
-
-                // Fill
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(fillColor)
-                    .frame(
-                        width: vertical ? nil : geometry.size.width * CGFloat(value / maxValue),
-                        height: vertical ? geometry.size.height * CGFloat(value / maxValue) : nil
-                    )
-            }
-        }
-    }
-}

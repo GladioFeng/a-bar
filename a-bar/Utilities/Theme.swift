@@ -508,20 +508,6 @@ extension Color {
     )
   }
 
-  /// Convenience method to blend with theme's bar background
-  func withBarElementOpacity(_ opacity: CGFloat, barBackground: Color? = nil) -> Color {
-    // If no bar background provided, just return self (for backward compatibility)
-    guard let barBg = barBackground else { return self }
-    
-    // For high opacity (>= 70%), the widget background dominates, use it directly
-    if opacity >= 70 {
-      return self
-    }
-    
-    // For lower opacity, blend to get the effective visible color
-    return blendedWithBarBackground(barBg, opacity: opacity)
-  }
-
   /// Get a contrasting foreground color based on luminance
   /// - Parameters:
   ///   - theme: The current theme

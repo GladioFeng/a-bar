@@ -197,17 +197,6 @@ class SettingsManager: ObservableObject {
     hasUnsavedChanges = false
   }
 
-  func resetToDefaults() {
-    var defaults = ABarSettings()
-    // Profiles are not appearance defaults - resetting the look should not delete them.
-    defaults.profiles = settings.profiles
-    defaults.activeProfileId = settings.activeProfileId
-    SettingsCodec.normalize(&defaults)
-
-    draftSettings = defaults
-    loadLayoutForEditing(activeLayout)
-  }
-
   func discardChanges() {
     draftSettings = settings
     loadLayoutForEditing(activeLayout)
@@ -556,21 +545,6 @@ class LayoutManager: ObservableObject {
   /// Update the entire multi-display layout
   func updateLayout(_ layout: MultiDisplayLayout) {
     multiDisplayLayout = layout
-  }
-
-  /// Update configuration for a specific display
-  func updateDisplayConfiguration(_ config: DisplayConfiguration) {
-    multiDisplayLayout.setConfiguration(config, forDisplay: config.displayIndex)
-  }
-
-  /// Remove configuration for a display
-  func removeDisplayConfiguration(forDisplay index: Int) {
-    multiDisplayLayout.removeConfiguration(forDisplay: index)
-  }
-
-  /// Reset to default layout
-  func resetToDefault() {
-    multiDisplayLayout = .defaultLayout
   }
 }
 

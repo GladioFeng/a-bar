@@ -149,33 +149,4 @@ enum ShellExecutor {
         process.waitUntilExit()
         return readString(from: pipe)
     }
-    
-    /// Run command in user's terminal app
-    static func runInTerminal(_ command: String, terminal: String = "Terminal") {
-        let script: String
-        
-        switch terminal {
-        case "iTerm2":
-            script = """
-            tell application "iTerm"
-                activate
-                set newWindow to (create window with default profile)
-                tell current session of newWindow
-                    write text "\(command)"
-                end tell
-            end tell
-            """
-        default:
-            script = """
-            tell application "Terminal"
-                activate
-                do script "\(command)"
-            end tell
-            """
-        }
-        
-        Task {
-            _ = try? await run("osascript -e '\(script)'")
-        }
-    }
 }
