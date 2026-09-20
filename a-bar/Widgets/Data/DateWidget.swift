@@ -51,16 +51,8 @@ struct DateWidget: View {
   }
 
   private var formattedDate: String {
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: dateSettings.locale)
-
-    if dateSettings.shortFormat {
-      formatter.dateFormat = "EE, MMM d"
-    } else {
-      formatter.dateFormat = "EEEE, MMM d"
-    }
-
-    return formatter.string(from: currentDate)
+    WidgetLabels.date(
+      currentDate, localeIdentifier: dateSettings.locale, shortFormat: dateSettings.shortFormat)
   }
 
   private func openCalendar() {

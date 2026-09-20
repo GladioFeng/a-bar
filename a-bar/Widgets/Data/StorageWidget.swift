@@ -51,19 +51,11 @@ struct StorageWidget: View {
     }
 
     private func barColor(for volume: StorageVolume) -> Color {
-        switch volume.fullness {
-        case let x where x > 0.9:
-            return theme.red
-        case let x where x > 0.75:
-            return theme.yellow
-        default:
-            return theme.green
-        }
+        WidgetPalette.storageBar(fullness: volume.fullness).color(in: theme)
     }
 
     private func shortName(for name: String) -> String {
-        if name.lowercased().contains("macintosh") { return "Mac" }
-        return name
+        WidgetLabels.storageVolumeName(name)
     }
 
     private func openDiskUtility() {

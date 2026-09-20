@@ -56,10 +56,7 @@ struct GitHubWidget: View {
     }
     
     private var notificationText: String {
-        if notificationCount > 99 {
-            return "99+"
-        }
-        return "\(notificationCount)"
+        WidgetLabels.notificationCount(notificationCount)
     }
     
     private func refreshNotifications() {

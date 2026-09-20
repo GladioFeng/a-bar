@@ -57,15 +57,8 @@ struct TimeWidget: View {
   }
 
   private var formattedTime: String {
-    let formatter = DateFormatter()
-
-    if timeSettings.hour12 {
-      formatter.dateFormat = timeSettings.showSeconds ? "h:mm:ss a" : "h:mm a"
-    } else {
-      formatter.dateFormat = timeSettings.showSeconds ? "HH:mm:ss" : "HH:mm"
-    }
-
-    return formatter.string(from: currentTime)
+    WidgetLabels.time(
+      currentTime, hour12: timeSettings.hour12, showSeconds: timeSettings.showSeconds)
   }
 
   private func startTimer() {

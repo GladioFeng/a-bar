@@ -116,38 +116,7 @@ struct WeatherWidget: View {
         var lat: Double? = nil
         var lon: Double? = nil
 
-        func generateVariants(_ loc: String) -> [String] {
-            var variants: [String] = []
-            let trimmed = loc.trimmingCharacters(in: .whitespacesAndNewlines)
-            variants.append(trimmed)
-
-            // Split on commas and try progressively shorter forms
-            let parts = trimmed.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            if parts.count > 1 {
-                variants.append(parts[0])
-                if parts.count >= 2 {
-                    variants.append(parts[0] + ", " + parts[1])
-                }
-            }
-
-            // Remove digits (postal codes) and hyphens, try without diacritics
-            let noDigits = trimmed.replacingOccurrences(of: "\\d+", with: "", options: .regularExpression)
-            variants.append(noDigits.replacingOccurrences(of: "-", with: " ").trimmingCharacters(in: .whitespacesAndNewlines))
-
-            // Remove diacritics
-            let folded = trimmed.folding(options: .diacriticInsensitive, locale: .current)
-            if folded != trimmed { variants.append(folded) }
-
-            // Deduplicate preserving order
-            var seen = Set<String>()
-            return variants.filter { s in
-                let ok = !s.isEmpty && !seen.contains(s)
-                if ok { seen.insert(s) }
-                return ok
-            }
-        }
-
-        let candidates = generateVariants(location)
+        let candidates = WeatherPresentation.locationVariants(location)
         for candidate in candidates {
             do {
                 let geoUrl = URL(string: "https://geocoding-api.open-meteo.com/v1/search?name=\(candidate.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? candidate)&count=1")!
@@ -210,10 +179,14 @@ struct WeatherWidget: View {
         let isNight = isDay == 0
 
         // Map Open-Meteo weathercode to description
-        let description = openMeteoDescription(for: weatherCode)
+        let description = WeatherPresentation.openMeteoDescription(for: weatherCode)
 
-        let tempC = weatherSettings.unit == .celsius ? Int(round(temp)) : Int(round((temp - 32) * 5 / 9))
-        let tempF = weatherSettings.unit == .fahrenheit ? Int(round(temp)) : Int(round((temp * 9 / 5) + 32))
+        let tempC =
+            weatherSettings.unit == .celsius
+            ? Int(round(temp)) : WeatherPresentation.celsius(fromFahrenheit: temp)
+        let tempF =
+            weatherSettings.unit == .fahrenheit
+            ? Int(round(temp)) : WeatherPresentation.fahrenheit(fromCelsius: temp)
 
         return WeatherData(
             temperatureC: tempC,
@@ -223,58 +196,14 @@ struct WeatherWidget: View {
         )
     }
 
-    // Open-Meteo weathercode mapping
-    private func openMeteoDescription(for code: Int) -> String {
-        switch code {
-        case 0: return "Clear sky"
-        case 1, 2, 3: return "Mainly clear"
-        case 45, 48: return "Fog"
-        case 51, 53, 55: return "Drizzle"
-        case 56, 57: return "Freezing Drizzle"
-        case 61, 63, 65: return "Rain"
-        case 66, 67: return "Freezing Rain"
-        case 71, 73, 75, 77: return "Snow"
-        case 80, 81, 82: return "Rain showers"
-        case 85, 86: return "Snow showers"
-        case 95: return "Thunderstorm"
-        case 96, 99: return "Thunderstorm with hail"
-        default: return "Unknown"
-        }
-    }
-    
     private func temperatureString(_ temp: Int) -> String {
         "\(temp)°\(weatherSettings.unit.rawValue)"
     }
     
     private func weatherIcon(for description: String, atNight: Bool) -> some View {
-        let lowercased = description.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        var iconName: String? = nil
-        var iconColor: Color = theme.foreground
-
-        if lowercased.contains("sun") || lowercased.contains("clear") {
-            iconName = atNight ? "moon.fill" : "sun.max.fill"
-            iconColor = theme.yellow
-        } else if lowercased.contains("cloud") && lowercased.contains("sun") {
-            iconName = atNight ? "cloud.moon.fill" : "cloud.sun.fill"
-        } else if lowercased.contains("cloud") {
-            iconName = "cloud.fill"
-        } else if lowercased.contains("rain") || lowercased.contains("drizzle") {
-            iconName = "cloud.rain.fill"
-            iconColor = theme.blue
-        } else if lowercased.contains("thunder") || lowercased.contains("storm") {
-            iconName = "cloud.bolt.fill"
-            iconColor = theme.yellow
-        } else if lowercased.contains("snow") {
-            iconName = "cloud.snow.fill"
-            iconColor = theme.cyan
-        } else if lowercased.contains("fog") || lowercased.contains("mist") {
-            iconName = "cloud.fog.fill"
-        }
-
-        // Final fallback to a known-good SF Symbol
-        if iconName == nil || iconName?.isEmpty == true {
-            iconName = atNight ? "moon.fill" : "cloud.fill"
-        }
+        let icon = WeatherPresentation.icon(for: description, atNight: atNight)
+        let iconName: String? = icon.symbol
+        let iconColor: Color = icon.role.color(in: theme)
 
         return Image(systemName: iconName!)
             .font(.system(size: 12))

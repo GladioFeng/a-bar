@@ -75,11 +75,7 @@ struct SoundWidget: View {
 
           // Set popover content using a dedicated SwiftUI view so it keeps its own state
           let commit: (Double) -> Void = { v in
-            if systemInfo.volumeLevel > 1.01 {
-              systemInfo.setSystemVolume(Float(v * 100))
-            } else {
-              systemInfo.setSystemVolume(Float(v))
-            }
+            systemInfo.setSystemVolume(VolumeLevel.denormalize(v))
           }
 
           let toggle: () -> Void = {
@@ -103,33 +99,15 @@ struct SoundWidget: View {
   }
 
   private var normalizedVolume: Double {
-    // If volumeLevel is in 0...1, use as is. If in 0...100, normalize.
-    let v = systemInfo.volumeLevel
-    if v > 1.01 { return Double(min(1.0, max(0.0, v / 100.0))) }
-    return Double(min(1.0, max(0.0, v)))
+    VolumeLevel.normalize(systemInfo.volumeLevel)
   }
 
   private var volumeIcon: String {
-    if systemInfo.isMuted {
-      return "speaker.slash.fill"
-    }
-    let level = normalizedVolume
-    if level == 0 {
-      return "speaker.fill"
-    } else if level < 0.33 {
-      return "speaker.wave.1.fill"
-    } else if level < 0.66 {
-      return "speaker.wave.2.fill"
-    } else {
-      return "speaker.wave.3.fill"
-    }
+    VolumeLevel.speakerIcon(normalizedVolume, isMuted: systemInfo.isMuted)
   }
 
   private var volumeText: String {
-    if systemInfo.isMuted {
-      return "-%"
-    }
-    return "\(Int(normalizedVolume * 100))%"
+    VolumeLevel.percentText(normalizedVolume, isMuted: systemInfo.isMuted)
   }
 
   private struct PopoverContent: View {
@@ -141,11 +119,8 @@ struct SoundWidget: View {
     let onToggleMute: () -> Void
     let onOpenPrefs: () -> Void
 
-    // Helper to normalize volume for slider
     private var normalizedVolume: Double {
-      let v = systemInfo.volumeLevel
-      if v > 1.01 { return Double(min(1.0, max(0.0, v / 100.0))) }
-      return Double(min(1.0, max(0.0, v)))
+      VolumeLevel.normalize(systemInfo.volumeLevel)
     }
 
     var body: some View {
@@ -201,8 +176,7 @@ struct SoundWidget: View {
       }
       .onReceive(systemInfo.$volumeLevel) { newLevel in
         // update slider while open when system volume changes externally
-        let v = newLevel
-        sliderValue = Double(v > 1.01 ? v / 100.0 : v)
+        sliderValue = VolumeLevel.normalize(newLevel)
       }
     }
   }

@@ -25,6 +25,11 @@ All notable changes to this project will be documented in this file.
 - fix: a new profile name that differs from an existing one only by surrounding spaces is now recognised as a duplicate instead of being accepted
 - refactor: the layout builder's drag payload, reordering and custom-widget index handling moved out of the views into tested logic
 - test: cover layout drag and drop, widget reordering, custom-widget index remapping and profile name validation
+- fix: a critically low battery now shows red - the warning was unreachable, so a battery at 2% looked the same as one at 45%
+- fix: an AeroSpace space that is visible but not focused no longer draws a stray dark rectangle behind its background
+- fix: a long single-word keyboard layout name is now shortened instead of pushing the rest of the bar along
+- refactor: widget colours, labels, weather presentation and graph geometry moved out of the views into tested logic, removing several branches that could never be reached
+- test: cover widget threshold colours, volume handling, bar labels, weather presentation, graph points and bar placement
 
 ## v1.5.2 - 2026-09-20
 

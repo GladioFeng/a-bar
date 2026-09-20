@@ -89,7 +89,6 @@ struct AerospaceSpaceView: View {
           RoundedRectangle(cornerRadius: globalSettings.barElementsCornerRadius)
             .fill(theme.mainAlt.opacity((globalSettings.barElementsBackgroundOpacity / 100) * 0.6))
         } else if isVisible {
-            RoundedRectangle(cornerRadius: 4)
           RoundedRectangle(cornerRadius: globalSettings.barElementsCornerRadius)
             .fill(theme.mainAlt.opacity((globalSettings.barElementsBackgroundOpacity / 100) * 0.45))
         } else if isHovered {

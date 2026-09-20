@@ -14,13 +14,7 @@ struct MemoryWidget: View {
   }
 
   private var memoryColor: Color {
-    let usage = systemInfo.memoryPressure
-    if usage > 80 {
-      return theme.red
-    } else if usage > 60 {
-      return theme.yellow
-    }
-    return theme.green
+    WidgetPalette.memoryPressure(systemInfo.memoryPressure).color(in: theme)
   }
 
   var body: some View {

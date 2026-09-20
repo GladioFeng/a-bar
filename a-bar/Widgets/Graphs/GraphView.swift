@@ -40,41 +40,29 @@ struct GraphView: View {
             ZStack(alignment: .leading) {
                 // Graph fill
                 Path { path in
-                    guard !values.isEmpty else { return }
+                    let points = GraphGeometry.points(
+                        values: values, maxValue: maxValue, size: geometry.size)
+                    guard !points.isEmpty else { return }
 
-                    let width = geometry.size.width
-                    let height = geometry.size.height
-                    let stepX = width / CGFloat(max(1, values.count - 1))
-
-                    path.move(to: CGPoint(x: 0, y: height))
-
-                    for (index, value) in values.enumerated() {
-                        let x = CGFloat(index) * stepX
-                        let y = height - (CGFloat(value / maxValue) * height)
-                        path.addLine(to: CGPoint(x: x, y: y))
+                    path.move(to: CGPoint(x: 0, y: geometry.size.height))
+                    for point in points {
+                        path.addLine(to: point)
                     }
-
-                    path.addLine(to: CGPoint(x: width, y: height))
+                    path.addLine(to: CGPoint(x: geometry.size.width, y: geometry.size.height))
                     path.closeSubpath()
                 }
                 .fill(fillColor.opacity(0.3))
 
                 // Graph line
                 Path { path in
-                    guard !values.isEmpty else { return }
+                    let points = GraphGeometry.points(
+                        values: values, maxValue: maxValue, size: geometry.size)
 
-                    let width = geometry.size.width
-                    let height = geometry.size.height
-                    let stepX = width / CGFloat(max(1, values.count - 1))
-
-                    for (index, value) in values.enumerated() {
-                        let x = CGFloat(index) * stepX
-                        let y = height - (CGFloat(value / maxValue) * height)
-
+                    for (index, point) in points.enumerated() {
                         if index == 0 {
-                            path.move(to: CGPoint(x: x, y: y))
+                            path.move(to: point)
                         } else {
-                            path.addLine(to: CGPoint(x: x, y: y))
+                            path.addLine(to: point)
                         }
                     }
                 }
@@ -110,7 +98,7 @@ struct PieChartView: View {
     var body: some View {
         GeometryReader { geometry in
             let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
-            let radius = min(geometry.size.width, geometry.size.height) / 2 - 1
+            let radius = GraphGeometry.pieRadius(in: geometry.size)
 
             ZStack {
                 // Free space
@@ -124,7 +112,8 @@ struct PieChartView: View {
                         center: center,
                         radius: radius,
                         startAngle: .degrees(-90),
-                        endAngle: .degrees(-90 + (usedPercentage / 100 * 360)),
+                        endAngle: .degrees(
+                            GraphGeometry.pieEndAngleDegrees(usedPercentage: usedPercentage)),
                         clockwise: false
                     )
                     path.closeSubpath()

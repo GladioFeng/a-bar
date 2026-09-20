@@ -117,13 +117,7 @@ struct BatteryIconView: View {
   }
 
   private var fillColor: Color {
-    if isCharging {
-      return theme.green
-    } else if percentage < 50 {
-      return theme.orange
-    } else if percentage < 20 {
-      return theme.red
-    }
-    return fgColor
+    WidgetPalette.batteryFill(percentage: percentage, isCharging: isCharging)?.color(in: theme)
+      ?? fgColor
   }
 }

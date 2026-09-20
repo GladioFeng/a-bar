@@ -70,6 +70,26 @@
 		A1000111 /* WidgetReorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000111 /* WidgetReorder.swift */; };
 		A1000112 /* UserWidgetIndexRemapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000112 /* UserWidgetIndexRemapper.swift */; };
 		A1000113 /* ProfileNameValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000113 /* ProfileNameValidator.swift */; };
+		A1000114 /* ThemeColorRole.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000114 /* ThemeColorRole.swift */; };
+		A1000115 /* WidgetPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000115 /* WidgetPalette.swift */; };
+		A1000116 /* VolumeLevel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000116 /* VolumeLevel.swift */; };
+		A1000117 /* WidgetLabels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000117 /* WidgetLabels.swift */; };
+		A1000118 /* WeatherPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000118 /* WeatherPresentation.swift */; };
+		A1000119 /* GraphGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000119 /* GraphGeometry.swift */; };
+		A1000120 /* BarGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000120 /* BarGeometry.swift */; };
+		A1000225 /* ThemeColorRole.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000114 /* ThemeColorRole.swift */; };
+		A1000226 /* WidgetPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000115 /* WidgetPalette.swift */; };
+		A1000227 /* VolumeLevel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000116 /* VolumeLevel.swift */; };
+		A1000228 /* WidgetLabels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000117 /* WidgetLabels.swift */; };
+		A1000229 /* WeatherPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000118 /* WeatherPresentation.swift */; };
+		A1000230 /* GraphGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000119 /* GraphGeometry.swift */; };
+		A1000231 /* BarGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000120 /* BarGeometry.swift */; };
+		A1000312 /* WidgetPaletteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000312 /* WidgetPaletteTests.swift */; };
+		A1000313 /* VolumeLevelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000313 /* VolumeLevelTests.swift */; };
+		A1000314 /* WidgetLabelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000314 /* WidgetLabelsTests.swift */; };
+		A1000315 /* WeatherPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000315 /* WeatherPresentationTests.swift */; };
+		A1000316 /* GraphGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000316 /* GraphGeometryTests.swift */; };
+		A1000317 /* BarGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000317 /* BarGeometryTests.swift */; };
 		A1000221 /* WidgetDragPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000110 /* WidgetDragPayload.swift */; };
 		A1000222 /* WidgetReorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000111 /* WidgetReorder.swift */; };
 		A1000223 /* UserWidgetIndexRemapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000112 /* UserWidgetIndexRemapper.swift */; };
@@ -170,6 +190,19 @@
 		B1000111 /* WidgetReorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetReorder.swift"; sourceTree = "<group>"; };
 		B1000112 /* UserWidgetIndexRemapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserWidgetIndexRemapper.swift"; sourceTree = "<group>"; };
 		B1000113 /* ProfileNameValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProfileNameValidator.swift"; sourceTree = "<group>"; };
+		B1000114 /* ThemeColorRole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ThemeColorRole.swift"; sourceTree = "<group>"; };
+		B1000115 /* WidgetPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetPalette.swift"; sourceTree = "<group>"; };
+		B1000116 /* VolumeLevel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "VolumeLevel.swift"; sourceTree = "<group>"; };
+		B1000117 /* WidgetLabels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetLabels.swift"; sourceTree = "<group>"; };
+		B1000118 /* WeatherPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WeatherPresentation.swift"; sourceTree = "<group>"; };
+		B1000119 /* GraphGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GraphGeometry.swift"; sourceTree = "<group>"; };
+		B1000120 /* BarGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BarGeometry.swift"; sourceTree = "<group>"; };
+		B1000312 /* WidgetPaletteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetPaletteTests.swift"; sourceTree = "<group>"; };
+		B1000313 /* VolumeLevelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "VolumeLevelTests.swift"; sourceTree = "<group>"; };
+		B1000314 /* WidgetLabelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetLabelsTests.swift"; sourceTree = "<group>"; };
+		B1000315 /* WeatherPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WeatherPresentationTests.swift"; sourceTree = "<group>"; };
+		B1000316 /* GraphGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GraphGeometryTests.swift"; sourceTree = "<group>"; };
+		B1000317 /* BarGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BarGeometryTests.swift"; sourceTree = "<group>"; };
 		B1000308 /* WidgetDragPayloadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetDragPayloadTests.swift"; sourceTree = "<group>"; };
 		B1000309 /* WidgetReorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetReorderTests.swift"; sourceTree = "<group>"; };
 		B1000310 /* UserWidgetIndexRemapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserWidgetIndexRemapperTests.swift"; sourceTree = "<group>"; };
@@ -396,6 +429,13 @@
 				B1000111 /* WidgetReorder.swift */,
 				B1000112 /* UserWidgetIndexRemapper.swift */,
 				B1000113 /* ProfileNameValidator.swift */,
+				B1000114 /* ThemeColorRole.swift */,
+				B1000115 /* WidgetPalette.swift */,
+				B1000116 /* VolumeLevel.swift */,
+				B1000117 /* WidgetLabels.swift */,
+				B1000118 /* WeatherPresentation.swift */,
+				B1000119 /* GraphGeometry.swift */,
+				B1000120 /* BarGeometry.swift */,
 			);
 			path = Logic;
 			sourceTree = "<group>";
@@ -429,6 +469,12 @@
 				B1000309 /* WidgetReorderTests.swift */,
 				B1000310 /* UserWidgetIndexRemapperTests.swift */,
 				B1000311 /* ProfileNameValidatorTests.swift */,
+				B1000312 /* WidgetPaletteTests.swift */,
+				B1000313 /* VolumeLevelTests.swift */,
+				B1000314 /* WidgetLabelsTests.swift */,
+				B1000315 /* WeatherPresentationTests.swift */,
+				B1000316 /* GraphGeometryTests.swift */,
+				B1000317 /* BarGeometryTests.swift */,
 			);
 			path = "a-barTests";
 			sourceTree = "<group>";
@@ -583,6 +629,13 @@
 				A1000111 /* WidgetReorder.swift in Sources */,
 				A1000112 /* UserWidgetIndexRemapper.swift in Sources */,
 				A1000113 /* ProfileNameValidator.swift in Sources */,
+				A1000114 /* ThemeColorRole.swift in Sources */,
+				A1000115 /* WidgetPalette.swift in Sources */,
+				A1000116 /* VolumeLevel.swift in Sources */,
+				A1000117 /* WidgetLabels.swift in Sources */,
+				A1000118 /* WeatherPresentation.swift in Sources */,
+				A1000119 /* GraphGeometry.swift in Sources */,
+				A1000120 /* BarGeometry.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -607,6 +660,12 @@
 				A1000309 /* WidgetReorderTests.swift in Sources */,
 				A1000310 /* UserWidgetIndexRemapperTests.swift in Sources */,
 				A1000311 /* ProfileNameValidatorTests.swift in Sources */,
+				A1000312 /* WidgetPaletteTests.swift in Sources */,
+				A1000313 /* VolumeLevelTests.swift in Sources */,
+				A1000314 /* WidgetLabelsTests.swift in Sources */,
+				A1000315 /* WeatherPresentationTests.swift in Sources */,
+				A1000316 /* GraphGeometryTests.swift in Sources */,
+				A1000317 /* BarGeometryTests.swift in Sources */,
 				A1000210 /* Settings.swift in Sources */,
 				A1000211 /* SettingsCodec.swift in Sources */,
 				A1000212 /* SettingsStore.swift in Sources */,
@@ -622,6 +681,13 @@
 				A1000222 /* WidgetReorder.swift in Sources */,
 				A1000223 /* UserWidgetIndexRemapper.swift in Sources */,
 				A1000224 /* ProfileNameValidator.swift in Sources */,
+				A1000225 /* ThemeColorRole.swift in Sources */,
+				A1000226 /* WidgetPalette.swift in Sources */,
+				A1000227 /* VolumeLevel.swift in Sources */,
+				A1000228 /* WidgetLabels.swift in Sources */,
+				A1000229 /* WeatherPresentation.swift in Sources */,
+				A1000230 /* GraphGeometry.swift in Sources */,
+				A1000231 /* BarGeometry.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

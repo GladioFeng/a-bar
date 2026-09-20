@@ -42,16 +42,7 @@ struct KeyboardWidget: View {
   }
 
   private var formattedLayout: String {
-    // Show abbreviated version if too long
-    let layout = systemInfo.keyboardLayout
-    if layout.count > 10 {
-      // Try to get first word or abbreviation
-      if let firstWord = layout.split(separator: " ").first {
-        return String(firstWord)
-      }
-      return layout.truncated(to: 8)
-    }
-    return layout
+    WidgetLabels.keyboardLayout(systemInfo.keyboardLayout)
   }
 
   private func openKeyboardPreferences() {

@@ -19,21 +19,12 @@ class BarWindow: NSPanel {
     let distanceFromEdges = settings.barDistanceFromEdges
     let screenFrame = screen.frame
 
-    let barY: CGFloat
-    switch position {
-    case .top:
-      barY = screenFrame.maxY - barHeight - distanceFromEdges
-    case .bottom:
-      barY = screenFrame.minY + distanceFromEdges
-    }
+    let barFrame = BarGeometry.barFrame(
+      screenFrame: screenFrame,
+      height: barHeight,
+      inset: distanceFromEdges,
+      position: position)
 
-    let barFrame = NSRect(
-      x: screenFrame.minX + distanceFromEdges,
-      y: barY,
-      width: screenFrame.width - (distanceFromEdges * 2),
-      height: barHeight
-    )
-    
     //
     super.init(
       contentRect: barFrame,

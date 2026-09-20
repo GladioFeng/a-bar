@@ -103,17 +103,13 @@ struct MicWidget: View {
   }
 
   private var micIcon: String {
-    if systemInfo.isMicMuted || systemInfo.micLevel == 0 {
-      return "mic.slash.fill"
-    }
-    return "mic.fill"
+    VolumeLevel.microphoneIcon(
+      VolumeLevel.normalize(systemInfo.micLevel), isMuted: systemInfo.isMicMuted)
   }
 
   private var micText: String {
-    if systemInfo.isMicMuted {
-      return "-%"
-    }
-    return "\(Int(systemInfo.micLevel * 100))%"
+    VolumeLevel.percentText(
+      VolumeLevel.normalize(systemInfo.micLevel), isMuted: systemInfo.isMicMuted)
   }
 
   private struct PopoverContent: View {
