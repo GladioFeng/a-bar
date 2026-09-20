@@ -118,7 +118,7 @@ final class BluetoothService: ObservableObject {
         paired
         .compactMap { device -> BluetoothPairedDevice? in
           guard let address = device.addressString else { return nil }
-          let id = BluetoothService.normalizedAddress(address)
+          let id = BluetoothProfileParser.normalizedAddress(address)
           let isConnected = device.isConnected()
           let name = device.name ?? device.nameOrAddress ?? address
           return BluetoothPairedDevice(
@@ -191,12 +191,8 @@ final class BluetoothService: ObservableObject {
     }
   }
 
-  private struct ParsedProfile {
-    var battery: [String: BluetoothBatteryLevels]
-    var minorTypes: [String: String]
-  }
-
-  private static func fetchBatteryLevels() async -> ParsedProfile? {
+  /// Fork `system_profiler` and hand what it prints to `BluetoothProfileParser`.
+  private static func fetchBatteryLevels() async -> BluetoothProfileParser.ParsedProfile? {
     let output: String
     do {
       output = try await ShellExecutor.run(
@@ -207,72 +203,13 @@ final class BluetoothService: ObservableObject {
     }
 
     guard let data = output.data(using: .utf8),
-      let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      let entries = root["SPBluetoothDataType"] as? [[String: Any]],
-      let first = entries.first
+      let profile = BluetoothProfileParser.parse(data)
     else {
       print("Bluetooth: could not parse system_profiler output")
       return nil
     }
 
-    var battery: [String: BluetoothBatteryLevels] = [:]
-    var minorTypes: [String: String] = [:]
-
-    // `device_connected` is absent entirely when nothing is connected, and each
-    // element is a single-key dictionary keyed by the device's display name.
-    for key in ["device_connected", "device_not_connected"] {
-      guard let list = first[key] as? [[String: Any]] else { continue }
-      for entry in list {
-        guard let (_, value) = entry.first,
-          let props = value as? [String: Any],
-          let address = props["device_address"] as? String
-        else { continue }
-        let id = normalizedAddress(address)
-
-        if let minorType = props["device_minorType"] as? String {
-          minorTypes[id] = minorType
-        }
-
-        var levels = BluetoothBatteryLevels()
-        // Scan by prefix rather than hardcoding the four key names, so a
-        // renamed or added suffix degrades to "unknown" instead of breaking.
-        for (propKey, propValue) in props where propKey.hasPrefix("device_batteryLevel") {
-          guard let percent = batteryPercent(propValue) else { continue }
-          switch propKey.dropFirst("device_batteryLevel".count) {
-          case "Left": levels.left = percent
-          case "Right": levels.right = percent
-          case "Case": levels.caseLevel = percent
-          default: levels.main = percent
-          }
-        }
-        if !levels.isEmpty {
-          battery[id] = levels
-        }
-      }
-    }
-
-    return ParsedProfile(battery: battery, minorTypes: minorTypes)
-  }
-
-  /// system_profiler reports battery as a localized percentage string — the
-  /// observed value is "100\u{00A0}%", with a NON-BREAKING space (U+00A0), and
-  /// the format varies by macOS version and locale. Keep only the digits rather
-  /// than trimming a fixed character set: `trimmingCharacters(in: "% ")` leaves
-  /// the U+00A0 in place, `Int(_:)` then returns nil, and battery silently
-  /// never renders.
-  static func batteryPercent(_ raw: Any?) -> Int? {
-    if let value = raw as? Int { return value }
-    if let value = raw as? Double { return Int(value.rounded()) }
-    guard let text = raw as? String else { return nil }
-    let digits = text.filter { $0.isNumber }
-    return digits.isEmpty ? nil : Int(digits)
-  }
-
-  /// Merge key shared by IOBluetooth and system_profiler. IOBluetooth reports
-  /// "ac-bf-71-09-96-af" while system_profiler reports "AC:BF:71:09:96:AF", so
-  /// comparing them directly always fails and battery never appears.
-  static func normalizedAddress(_ raw: String) -> String {
-    raw.lowercased().filter { $0.isHexDigit }
+    return profile
   }
 
   // MARK: - Popover-driven cadence
@@ -423,68 +360,6 @@ private final class BluetoothNotificationObserver: NSObject {
     _ notification: IOBluetoothUserNotification, device: IOBluetoothDevice
   ) {
     onChange()
-  }
-}
-
-// MARK: - Models
-
-/// Aggregate Bluetooth state published to the widgets.
-struct BluetoothInfo: Equatable {
-  /// A Bluetooth controller is present on this Mac.
-  var hasController: Bool = false
-  /// Controller radio is powered on.
-  var isPoweredOn: Bool = false
-  /// Paired devices, connected ones first, then alphabetically.
-  var devices: [BluetoothPairedDevice] = []
-  /// False when the private power-toggle symbol could not be resolved.
-  var canTogglePower: Bool = true
-
-  var connectedDevices: [BluetoothPairedDevice] { devices.filter { $0.isConnected } }
-}
-
-/// A paired Bluetooth device. Named to avoid shadowing IOBluetooth's own
-/// `IOBluetoothDevice` and the `Bluetooth*` C types from Bluetooth.h.
-struct BluetoothPairedDevice: Identifiable, Equatable {
-  /// Normalized address — also the merge key against system_profiler.
-  let id: String
-  /// Address as IOBluetooth reports it ("ac-bf-71-09-96-af").
-  let address: String
-  let name: String
-  let isConnected: Bool
-  let kind: BluetoothDeviceKind
-  /// Only known while connected, and only via system_profiler.
-  var battery: BluetoothBatteryLevels?
-}
-
-/// Battery levels reported by `system_profiler`. Any combination may be absent:
-/// single-battery headsets report only `main`, AirPods report left/right/case.
-struct BluetoothBatteryLevels: Equatable {
-  var main: Int?
-  var left: Int?
-  var right: Int?
-  var caseLevel: Int?
-
-  var isEmpty: Bool { main == nil && left == nil && right == nil && caseLevel == nil }
-  /// Lowest known level, used for the "low battery" tint.
-  var lowest: Int? { [main, left, right, caseLevel].compactMap { $0 }.min() }
-}
-
-/// Coarse device family, used to pick an SF Symbol.
-enum BluetoothDeviceKind: Equatable {
-  case headphones, speaker, keyboard, mouse, gamepad, phone, watch, computer, other
-
-  var symbolName: String {
-    switch self {
-    case .headphones: return "headphones"
-    case .speaker: return "hifispeaker"
-    case .keyboard: return "keyboard"
-    case .mouse: return "computermouse"
-    case .gamepad: return "gamecontroller"
-    case .phone: return "iphone"
-    case .watch: return "applewatch"
-    case .computer: return "laptopcomputer"
-    case .other: return "dot.radiowaves.left.and.right"
-    }
   }
 }
 

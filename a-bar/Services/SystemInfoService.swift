@@ -27,8 +27,9 @@ class SystemInfoService: ObservableObject {
     
     // Disk I/O
     @Published private(set) var diskStats = DiskIOStats()
-    private var previousDiskBytes: (read: UInt64, write: UInt64)?
-    private var lastDiskCheckTime: Date?
+    /// A disk that vanishes and comes back is not a burst of I/O, so a counter going backwards
+    /// reports nothing.
+    private var diskSampler = RateSampler(onCounterReset: .reportNothing)
 
     // Graph histories
     @Published var cpuHistory = GraphHistory(maxLength: 40)
@@ -42,8 +43,9 @@ class SystemInfoService: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private let settingsManager = SettingsManager.shared
 
-    private var previousNetworkBytes: (rx: UInt64, tx: UInt64)?
-    private var lastNetworkCheckTime: Date?
+    /// An interface that re-attaches counts from zero again, so the whole new reading is this
+    /// interval's traffic.
+    private var networkSampler = RateSampler(onCounterReset: .countWholeReading)
 
     // Storage volumes
     @Published private(set) var volumes: [StorageVolume] = []
@@ -329,33 +331,10 @@ class SystemInfoService: ObservableObject {
     }
 
     private func calculateNetworkStats(rxBytes: UInt64, txBytes: UInt64) -> NetworkStats {
-        let now = Date()
-
-        if let previous = previousNetworkBytes,
-           let lastTime = lastNetworkCheckTime {
-            let delta = now.timeIntervalSince(lastTime)
-            guard delta > 0 else { return NetworkStats() }
-
-            let rxDiff = rxBytes >= previous.rx ? rxBytes - previous.rx : rxBytes
-            let txDiff = txBytes >= previous.tx ? txBytes - previous.tx : txBytes
-
-            let download = Double(rxDiff) / delta
-            let upload = Double(txDiff) / delta
-
-            previousNetworkBytes = (rxBytes, txBytes)
-            lastNetworkCheckTime = now
-
-            return NetworkStats(
-                download: UInt64(max(0, download)),
-                upload: UInt64(max(0, upload))
-            )
-        }
-
-        previousNetworkBytes = (rxBytes, txBytes)
-        lastNetworkCheckTime = now
-        return NetworkStats()
+        let rates = networkSampler.sample(inbound: rxBytes, outbound: txBytes)
+        return NetworkStats(download: rates.inbound, upload: rates.outbound)
     }
-    
+
     /// Native sysctl-based network statistics (primary method)
     private func getNetworkStatsNative() -> NetworkStats? {
         var rxBytes: UInt64 = 0
@@ -396,7 +375,7 @@ class SystemInfoService: ObservableObject {
                     let ifRx = ifm2.ifm_data.ifi_ibytes
                     let ifTx = ifm2.ifm_data.ifi_obytes
                     
-                    if isValidDataInterface(ifName) {
+                    if NetworkInterfaces.isValidDataInterface(ifName) {
                         foundValidInterface = true
                         rxBytes &+= ifRx
                         txBytes &+= ifTx
@@ -434,7 +413,7 @@ class SystemInfoService: ObservableObject {
                 guard parts.count >= 3 else { continue }
                 
                 let ifName = String(parts[0])
-                guard isValidDataInterface(ifName) else { continue }
+                guard NetworkInterfaces.isValidDataInterface(ifName) else { continue }
                 
                 if let rx = UInt64(parts[1]), let tx = UInt64(parts[2]) {
                     rxBytes &+= rx
@@ -459,21 +438,6 @@ class SystemInfoService: ObservableObject {
         return String(cString: buffer)
     }
 
-    /// Accepts only real data-carrying interfaces (consistent across all Mac models)
-    private func isValidDataInterface(_ name: String) -> Bool {
-        // Primary interfaces for actual network traffic
-        return
-            name.hasPrefix("en") ||      // Ethernet / Wi-Fi (en0, en1, etc.)
-            name.hasPrefix("bridge") ||  // Network bridge interfaces
-            name.hasPrefix("ap") ||      // Access point interfaces
-            name.hasPrefix("awdl") ||    // Apple Wireless Direct Link
-            name.hasPrefix("llw") ||     // Low Latency WLAN
-            name.hasPrefix("utun") ||    // VPN / system tunnels
-            name.hasPrefix("ipsec") ||   // IPSec tunnels
-            name.hasPrefix("pdp_ip") ||  // iPhone tethering
-            name.hasPrefix("ppp")        // Point-to-Point Protocol
-    }
-    
     func refreshDiskStats() {
         Task {
             let stats = await getDiskStats()
@@ -542,28 +506,8 @@ class SystemInfoService: ObservableObject {
             service = IOIteratorNext(iterator)
         }
         
-        let now = Date()
-        
-        // Calculate bytes per second
-        if let previous = previousDiskBytes,
-           let lastTime = lastDiskCheckTime,
-           now.timeIntervalSince(lastTime) > 0 {
-            let timeDelta = now.timeIntervalSince(lastTime)
-            let readDelta = readBytes > previous.read ? readBytes - previous.read : 0
-            let writeDelta = writeBytes > previous.write ? writeBytes - previous.write : 0
-            
-            let readPerSec = UInt64(Double(readDelta) / timeDelta)
-            let writePerSec = UInt64(Double(writeDelta) / timeDelta)
-            
-            previousDiskBytes = (readBytes, writeBytes)
-            lastDiskCheckTime = now
-            
-            return DiskIOStats(read: readPerSec, write: writePerSec)
-        }
-        
-        previousDiskBytes = (readBytes, writeBytes)
-        lastDiskCheckTime = now
-        return DiskIOStats()
+        let rates = diskSampler.sample(inbound: readBytes, outbound: writeBytes)
+        return DiskIOStats(read: rates.inbound, write: rates.outbound)
     }
 
     private enum AudioDeviceKind {
@@ -996,7 +940,7 @@ class SystemInfoService: ObservableObject {
 
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
-            process.arguments = caffeinateArguments(for: option)
+            process.arguments = CaffeinateOptions.arguments(for: option)
             // Attach pipes so the process has valid output targets (avoid unexpected behavior)
             process.standardOutput = Pipe()
             process.standardError = Pipe()
@@ -1029,33 +973,6 @@ class SystemInfoService: ObservableObject {
 
         // Refresh state asynchronously (keeps external checks in sync)
         refreshCaffeinate()
-    }
-
-    private func caffeinateArguments(for option: String) -> [String] {
-        let trimmed = option.trimmingCharacters(in: .whitespacesAndNewlines)
-        switch trimmed.lowercased() {
-        case "systemsleep":
-            return ["-s"] // Prevent system sleep
-        case "displaysleep":
-            return ["-d"] // Prevent display sleep
-        case "idlesleep":
-            return ["-i"] // Prevent idle sleep
-        case "user":
-            return ["-u"] // Prevent sleep due to user inactivity
-        case "displayidle":
-            return ["-di"] // Prevent display and idle sleep
-        case "all":
-            return ["-dimu"] // Prevent all sleep types
-        case "":
-            return ["-di"] // Default: prevent display and idle sleep
-        default:
-            // If the option looks like a valid flag, use it; otherwise, fallback to default
-            if trimmed.hasPrefix("-") {
-                return [trimmed]
-            } else {
-                return ["-di"]
-            }
-        }
     }
 
     private func killAllCaffeinateProcesses() {
@@ -1163,53 +1080,5 @@ class SystemInfoService: ObservableObject {
     @objc private func handleMount(_ notification: Notification) {
         guard activeWidgets.contains(.storage) else { return }
         refreshVolumes()
-    }
-}
-
-struct BatteryInfo: Equatable {
-    var percentage: Int = 100
-    var isCharging: Bool = false
-    var isLowPowerMode: Bool = false
-
-    var isLow: Bool {
-        percentage < 20 && !isCharging
-    }
-}
-
-struct StorageVolume: Identifiable, Equatable {
-    let id = UUID()
-    let name: String
-    let url: URL
-    let totalBytes: Int
-    let usedBytes: Int
-
-    var fullness: Double {
-        guard totalBytes > 0 else { return 0 }
-        return Double(usedBytes) / Double(totalBytes)
-    }
-
-    var fullnessPercent: Int {
-        Int((fullness * 100).rounded())
-    }
-
-    var formattedTotal: String {
-        ByteCountFormatter.string(fromByteCount: Int64(totalBytes), countStyle: .file)
-    }
-
-    var formattedUsed: String {
-        ByteCountFormatter.string(fromByteCount: Int64(usedBytes), countStyle: .file)
-    }
-}
-
-struct DiskIOStats: Equatable {
-    var read: UInt64 = 0
-    var write: UInt64 = 0
-    
-    var formattedRead: String {
-        Double(read).formattedTransferRate(spacedUnits: true)
-    }
-    
-    var formattedWrite: String {
-        Double(write).formattedTransferRate(spacedUnits: true)
     }
 }

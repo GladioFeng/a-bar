@@ -108,7 +108,7 @@ class AerospaceService: ObservableObject {
             let workspacesOutput = try await ShellExecutor.run(
                 "\(aerospacePath) list-workspaces --all --json --format \"%{workspace} %{workspace-is-focused} %{workspace-is-visible} %{monitor-id} %{monitor-name}\""
             )
-            var workspaces = try JSONDecoder().decode(
+            let workspaces = try JSONDecoder().decode(
                 [AerospaceWorkspace].self, from: Data(workspacesOutput.utf8)
             )
 
@@ -135,18 +135,10 @@ class AerospaceService: ObservableObject {
             )
 
             // 5. Group windows by workspace and mark focused
-            for i in workspaces.indices {
-                let wsName = workspaces[i].workspace
-                workspaces[i].windows = allWindowsRaw
-                    .filter { $0.workspace == wsName }
-                    .map { window in
-                        var w = window
-                        w.isFocused = (w.windowId == focusedWindowId)
-                        return w
-                    }
-            }
-
-            let finalWorkspaces = workspaces
+            let finalWorkspaces = AerospaceMerge.merge(
+                workspaces: workspaces,
+                windows: allWindowsRaw,
+                focusedWindowId: focusedWindowId)
             let finalMonitors = monitors
             await MainActor.run { [finalWorkspaces, finalMonitors] in
                 self.state = AerospaceState(workspaces: finalWorkspaces, monitors: finalMonitors)

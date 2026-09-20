@@ -252,7 +252,8 @@ class YabaiService: ObservableObject {
     /// Process I/O and decoding stay off the main actor.
     private func fetch<T: Decodable>(_ collection: String, path: String) async throws -> T {
         let output = try await ShellExecutor.run(executable: path, arguments: ["-m", "query", "--\(collection)"])
-        return try JSONDecoder().decode(T.self, from: Data(cleanupJSON(output).utf8))
+        return try JSONDecoder().decode(
+            T.self, from: Data(YabaiJSONSanitizer.sanitize(output).utf8))
     }
 
     /// Focus on a specific space
@@ -318,34 +319,6 @@ class YabaiService: ObservableObject {
     }
 
     // Timer logic removed
-
-    /// Clean up JSON with escape sequences and malformed arrays
-    private func cleanupJSON(_ json: String) -> String {
-        var cleaned = json
-        
-        // Remove newline escape sequences
-        cleaned = cleaned.replacingOccurrences(of: "\\\n", with: "")
-        
-        // Fix empty arrays with commas: [,] -> []
-        cleaned = cleaned.replacingOccurrences(of: "\\[,+", with: "[", options: .regularExpression)
-        cleaned = cleaned.replacingOccurrences(of: ",+\\]", with: "]", options: .regularExpression)
-        
-        // Fix multiple consecutive commas
-        cleaned = cleaned.replacingOccurrences(of: ",+,", with: ",", options: .regularExpression)
-        
-        // Fix comma after opening bracket and before closing bracket
-        cleaned = cleaned.replacingOccurrences(of: "\\[,", with: "[", options: .regularExpression)
-        cleaned = cleaned.replacingOccurrences(of: ",\\]", with: "]", options: .regularExpression)
-        
-        // Escape backslashes then unescape quotes
-        cleaned = cleaned.replacingOccurrences(of: "\\", with: "\\\\")
-        cleaned = cleaned.replacingOccurrences(of: "\\\\\"", with: "\"")
-        
-        // Handle yabai quirks with 00000
-        cleaned = cleaned.replacingOccurrences(of: "00000", with: "0")
-        
-        return cleaned
-    }
 
     @MainActor
     private func handleError(_ error: Error) {

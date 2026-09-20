@@ -230,8 +230,9 @@ final class WifiService: ObservableObject {
           return
         }
         var next = self.info
-        next.networks = WifiService.dedupe(
-          networks, currentSSID: self.info.ssid, knownSSIDs: self.knownSSIDs)
+        next.networks = WifiScan.dedupe(
+          WifiService.scanResults(networks), currentSSID: self.info.ssid,
+          knownSSIDs: self.knownSSIDs)
         self.publish(next)
       }
     }
@@ -245,38 +246,17 @@ final class WifiService: ObservableObject {
     guard isStarted else { return }
     guard let cached = currentInterface?.cachedScanResults() else { return }
     var next = info
-    next.networks = WifiService.dedupe(cached, currentSSID: info.ssid, knownSSIDs: knownSSIDs)
+    next.networks = WifiScan.dedupe(
+      WifiService.scanResults(cached), currentSSID: info.ssid, knownSSIDs: knownSSIDs)
     publish(next)
   }
 
-  /// A scan returns one `CWNetwork` per BSSID, so a single network shows up once per
-  /// band and once per mesh node. Collapse by SSID, keeping the strongest signal.
-  ///
-  /// Networks with a nil SSID are dropped: those are the ones macOS redacted because
-  /// the app is not authorized for Location Services, and an unnamed row is useless.
-  static func dedupe(
-    _ networks: Set<CWNetwork>, currentSSID: String?, knownSSIDs: Set<String> = []
-  ) -> [WifiNetwork] {
-    var strongest: [String: WifiNetwork] = [:]
-
-    for network in networks {
-      guard let ssid = network.ssid, !ssid.isEmpty else { continue }
-      let candidate = WifiNetwork(
-        id: ssid,
-        ssid: ssid,
-        rssi: network.rssiValue,
-        security: WifiSecurity(network),
-        isCurrent: ssid == currentSSID,
-        isKnown: knownSSIDs.contains(ssid)
-      )
-      if let existing = strongest[ssid], existing.rssi >= candidate.rssi { continue }
-      strongest[ssid] = candidate
-    }
-
-    return strongest.values.sorted {
-      $0.isCurrent == $1.isCurrent
-        ? $0.rssi > $1.rssi
-        : $0.isCurrent
+  /// Map CoreWLAN's scan objects onto the plain values `WifiScan` collapses. `CWNetwork` has no
+  /// public initializer, so the mapping has to happen here and the rules cannot.
+  private static func scanResults(_ networks: Set<CWNetwork>) -> [WifiScan.ScanResult] {
+    networks.map {
+      WifiScan.ScanResult(
+        ssid: $0.ssid, rssiValue: $0.rssiValue, security: WifiSecurity($0))
     }
   }
 
@@ -303,7 +283,7 @@ final class WifiService: ObservableObject {
     Task { @MainActor in
       guard isStarted, generation == refreshGeneration else { return }
       let output = try? await ShellExecutor.run(
-        "networksetup -listpreferredwirelessnetworks \(WifiService.shellQuoted(device))")
+        "networksetup -listpreferredwirelessnetworks \(WifiScan.shellQuoted(device))")
       guard isStarted, generation == refreshGeneration, let output else { return }
       // First line is the "Preferred networks on enN:" header; the rest are tab-indented.
       let names =
@@ -328,7 +308,7 @@ final class WifiService: ObservableObject {
 
     Task {
       _ = try? await ShellExecutor.run(
-        "networksetup -setairportpower \(WifiService.shellQuoted(device)) "
+        "networksetup -setairportpower \(WifiScan.shellQuoted(device)) "
           + (turnOn ? "on" : "off"))
       await MainActor.run {
         guard self.isStarted, generation == self.refreshGeneration else { return }
@@ -394,8 +374,8 @@ final class WifiService: ObservableObject {
       // from the keychain. No password argument, so this stays out of argv too.
       if failure != nil, password == nil, let device = name {
         let output = ShellExecutor.runSync(
-          "networksetup -setairportnetwork \(WifiService.shellQuoted(device)) "
-            + WifiService.shellQuoted(ssid))
+          "networksetup -setairportnetwork \(WifiScan.shellQuoted(device)) "
+            + WifiScan.shellQuoted(ssid))
         if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
           failure = nil
         }
@@ -465,11 +445,6 @@ final class WifiService: ObservableObject {
     }
   }
 
-  /// Single-quote for the shell, escaping embedded quotes. SSIDs can contain spaces and
-  /// shell metacharacters.
-  static func shellQuoted(_ value: String) -> String {
-    "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-  }
 }
 
 /// Obj-C shim for `CWEventDelegate`, which requires a real NSObject. Mirrors the
@@ -552,73 +527,9 @@ final class WifiLocationAuthorization: NSObject, ObservableObject, CLLocationMan
   }
 }
 
-// MARK: - Models
-
-/// Aggregate Wi-Fi state published to the widgets.
-struct WifiInfo: Equatable {
-  /// A Wi-Fi interface exists on this Mac.
-  var hasInterface: Bool = false
-  /// The radio is powered on.
-  var isPoweredOn: Bool = false
-  /// Associated with a network. Distinct from `ssid` being non-nil: macOS redacts the
-  /// name without Location Services but still reports the interface mode, so this stays
-  /// truthful where the name cannot.
-  var isAssociated: Bool = false
-  /// Current network name. Nil when unassociated — or when Location Services is denied,
-  /// since macOS redacts the name in that case.
-  var ssid: String?
-  /// Nearby networks, deduped by SSID, current first then by signal strength.
-  ///
-  /// The connected network's own signal lives on its row here rather than on this
-  /// struct: a live RSSI reading drifts by a dBm every few seconds, and holding it in
-  /// the published snapshot would defeat the equality check in `publish` and re-render
-  /// every bar on every display on each tick.
-  var networks: [WifiNetwork] = []
-  /// Whether the app may read network names at all.
-  var locationAuthorized: Bool = false
-
-  var isConnected: Bool { isAssociated }
-}
-
-/// One nearby network, collapsed from every BSSID advertising that SSID.
-struct WifiNetwork: Identifiable, Equatable {
-  /// The SSID doubles as the identity: rows are per network, not per radio.
-  let id: String
-  let ssid: String
-  let rssi: Int
-  let security: WifiSecurity
-  let isCurrent: Bool
-  /// Already in the preferred-networks list, so macOS has its passphrase.
-  let isKnown: Bool
-
-  var ssidData: Data? { ssid.data(using: .utf8) }
-
-  /// A passphrase must be collected only for a secured network we have never joined.
-  var needsPassword: Bool { security.isSecured && !isKnown }
-
-  /// Signal strength bucketed to four bars, on the usual dBm boundaries.
-  var signalBars: Int {
-    switch rssi {
-    case (-50)...: return 4
-    case (-60)..<(-50): return 3
-    case (-70)..<(-60): return 2
-    default: return 1
-    }
-  }
-}
-
-/// Coarse security class. CoreWLAN distinguishes far more cases than the popover needs;
-/// what matters here is whether a passphrase is required and whether joining is even
-/// possible without an enterprise identity.
-enum WifiSecurity: Equatable {
-  case none
-  case personal
-  case enterprise
-  case unknown
-
-  var isSecured: Bool { self != .none }
-  var isEnterprise: Bool { self == .enterprise }
-
+/// Translating CoreWLAN's security types. The enum itself lives in `Models/WifiTypes.swift`;
+/// only these two initializers need the framework.
+extension WifiSecurity {
   init(_ security: CWSecurity) {
     switch security {
     case .none:
