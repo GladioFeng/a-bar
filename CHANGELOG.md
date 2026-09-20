@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - refactor: the config file is now the single source of truth with one writer, defaults come only from the property initializers, and profile invariants are enforced on every load
 - test: add a unit test target covering settings decoding, repair, migration and persistence
 - feat: refactor Wi-Fi functionality into a dedicated service like the Bluetooth widget
+- ci: run the test suite on every push and pull request, and fail the build when a test file is not a member of the test target
 
 ## v1.5.2 - 2026-09-20
 

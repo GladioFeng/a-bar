@@ -31,7 +31,13 @@ If you're new to open source contributions, here's a quick rundown tailored for 
    - `git checkout -b my-feature`
 
 5. Open the project in Xcode (`open a-bar.xcodeproj`) and make your changes.
-6. Run the app and any tests locally to verify your changes. You can run tests in Xcode or with `xcodebuild`.
+6. Run the app and the tests locally to verify your changes. In Xcode press ⌘U, or from the command line:
+   - `xcodebuild test -project a-bar.xcodeproj -scheme a-bar -destination 'platform=macOS'`
+
+   If you added a test file, add it to the `a-barTests` target as well - a test file that is not a
+   member of the target compiles nowhere and runs nothing, and the suite still reports success.
+   `./scripts/check-test-membership.sh` checks this, and runs in CI.
+
 7. Stage and commit your changes with a clear message following [conventional commit](https://www.conventionalcommits.org/en/v1.0.0/) style, for example:
    - `git add .`
    - `git commit -m "feat: short descriptive message"`

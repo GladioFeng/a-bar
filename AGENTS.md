@@ -8,3 +8,12 @@ In repositories indexed by CodeGraph (a `.codegraph/` directory exists at the re
 
 If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is the user's decision.
 <!-- CODEGRAPH_END -->
+
+## Tests
+
+`xcodebuild test -project a-bar.xcodeproj -scheme a-bar -destination 'platform=macOS'`
+
+The `a-barTests` target has no `TEST_HOST` and uses no `@testable import`: it recompiles a
+whitelist of production sources directly into the test bundle. Any new file a test touches must
+be added to the `S1000002` Sources phase in `a-bar.xcodeproj/project.pbxproj`, along with every
+file it depends on. Run `./scripts/check-test-membership.sh` after adding a test file.

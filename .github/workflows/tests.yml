@@ -1,0 +1,33 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # A test file missing from the target runs nothing and still reports
+      # success, so check membership before trusting a green suite.
+      - name: Check test target membership
+        run: ./scripts/check-test-membership.sh
+
+      # The `a-bar` scheme builds the app target for testing, so this compiles
+      # the whole app before the bundle. There is no signing identity on a runner.
+      - name: Run tests
+        run: |
+          xcodebuild test \
+            -project a-bar.xcodeproj \
+            -scheme a-bar \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO
