@@ -17,3 +17,31 @@ The `a-barTests` target has no `TEST_HOST` and uses no `@testable import`: it re
 whitelist of production sources directly into the test bundle. Any new file a test touches must
 be added to the `S1000002` Sources phase in `a-bar.xcodeproj/project.pbxproj`, along with every
 file it depends on. Run `./scripts/check-test-membership.sh` after adding a test file.
+
+Coverage is attributed to the `a-bar.app` target for any source compiled into the test bundle,
+so this arrangement measures correctly without a host app.
+
+### Two coverage numbers, and why the overall one stays low
+
+SwiftUI inflates executable-line counts by roughly 4x - `WidgetSettingsViews.swift` is 1,256
+source lines and 4,769 executable ones. `Views/` and `Widgets/` are about 72% of the app by
+that measure and are not unit-tested, so **overall coverage is structurally capped around 25%**
+even with every testable line covered. Do not treat the overall badge as a target, and do not
+chase it by smoke-rendering views.
+
+The `logic coverage` badge reports the same measurement excluding `Views/`, `Widgets/` and
+`BarView.swift`. That is the number that moves when the suite improves. Both are produced by
+`./scripts/generate-badges.sh` and published to the `badges` branch.
+
+### What not to call from a test
+
+The test bundle's Info.plist declares no privacy usage strings, so touching a TCC-protected
+framework does not fail - it aborts the whole test process. `IOBluetoothHostController` and
+`IOBluetoothDevice.pairedDevices()` do exactly that. `BluetoothServiceTests` therefore covers
+the pure Class-of-Device classifier and the guards in front of the framework, and never starts
+the service. CoreLocation in `WifiService` is the same hazard.
+
+IOKit, mach, CoreAudio and the IORegistry are not TCC-protected and are called for real in
+`SystemInfoServiceTests`, which asserts only invariants that hold on a headless runner with no
+battery, no GPU registry entry and no audio device. Its setters - volume, mute, caffeinate -
+are deliberately never called.

@@ -1,24 +1,15 @@
 import Cocoa
 
+/// The AppleScript surface. Every reply string these produce lives in
+/// `WidgetCommandDispatch`, which is where they are tested - an `NSScriptCommand` needs a
+/// command description from a loaded scripting definition to exist at all, so what is left
+/// here is only the plumbing between the direct parameter and the dispatch.
 private extension NSScriptCommand {
   func withWidgetName(_ body: (String) -> String) -> String {
     guard let widgetName = directParameter as? String else {
-      return "error: missing widget name"
+      return WidgetCommandDispatch.missingParameter("widget name")
     }
     return body(widgetName)
-  }
-
-  func widgetResultMessage<E: Error>(
-    for widgetName: String,
-    result: Result<Bool, E>,
-    success: (Bool) -> String
-  ) -> String {
-    switch result {
-    case .success(let value):
-      return success(value)
-    case .failure(let error):
-      return "error: \(error.localizedDescription)"
-    }
   }
 }
 
@@ -28,24 +19,18 @@ class RefreshWidgetCommand: NSScriptCommand {
 
   override func performDefaultImplementation() -> Any? {
     withWidgetName { widgetName in
-      // Check if refreshing yabai widgets
-      if widgetName.lowercased() == "yabai" {
+      let target = WidgetCommandDispatch.RefreshTarget(widgetName: widgetName)
+      switch target {
+      case .yabai:
         YabaiService.shared.refresh()
-        return "ok: refreshed yabai widgets"
-      }
-
-      // Check if refreshing aerospace widgets
-      if widgetName.lowercased() == "aerospace" {
+      case .aerospace:
         AerospaceService.shared.refresh()
-        return "ok: refreshed aerospace widgets"
+      case .userWidget(let name):
+        guard UserWidgetManager.shared.refreshWidget(named: name) else {
+          return WidgetCommandDispatch.notFound(name)
+        }
       }
-
-      // Otherwise, refresh a custom user widget
-      let success = UserWidgetManager.shared.refreshWidget(named: widgetName)
-      if success {
-        return "ok: refreshed widget '\(widgetName)'"
-      }
-      return "error: widget '\(widgetName)' not found"
+      return WidgetCommandDispatch.refreshed(target)
     }
   }
 }
@@ -56,12 +41,8 @@ class ToggleWidgetCommand: NSScriptCommand {
 
   override func performDefaultImplementation() -> Any? {
     withWidgetName { widgetName in
-      widgetResultMessage(
-        for: widgetName,
-        result: UserWidgetManager.shared.toggleWidget(named: widgetName)
-      ) { isNowActive in
-        let state = isNowActive ? "shown" : "hidden"
-        return "ok: widget '\(widgetName)' is now \(state)"
+      WidgetCommandDispatch.reply(for: UserWidgetManager.shared.toggleWidget(named: widgetName)) {
+        WidgetCommandDispatch.toggled(widgetName, isNowActive: $0)
       }
     }
   }
@@ -73,14 +54,8 @@ class HideWidgetCommand: NSScriptCommand {
 
   override func performDefaultImplementation() -> Any? {
     withWidgetName { widgetName in
-      widgetResultMessage(
-        for: widgetName,
-        result: UserWidgetManager.shared.hideWidget(named: widgetName)
-      ) { wasHidden in
-        if wasHidden {
-          return "ok: widget '\(widgetName)' is now hidden"
-        }
-        return "ok: widget '\(widgetName)' was already hidden"
+      WidgetCommandDispatch.reply(for: UserWidgetManager.shared.hideWidget(named: widgetName)) {
+        WidgetCommandDispatch.hidden(widgetName, didChange: $0)
       }
     }
   }
@@ -92,14 +67,8 @@ class ShowWidgetCommand: NSScriptCommand {
 
   override func performDefaultImplementation() -> Any? {
     withWidgetName { widgetName in
-      widgetResultMessage(
-        for: widgetName,
-        result: UserWidgetManager.shared.showWidget(named: widgetName)
-      ) { wasShown in
-        if wasShown {
-          return "ok: widget '\(widgetName)' is now shown"
-        }
-        return "ok: widget '\(widgetName)' was already shown"
+      WidgetCommandDispatch.reply(for: UserWidgetManager.shared.showWidget(named: widgetName)) {
+        WidgetCommandDispatch.shown(widgetName, didChange: $0)
       }
     }
   }
@@ -112,18 +81,15 @@ class SetProfileCommand: NSScriptCommand {
 
   override func performDefaultImplementation() -> Any? {
     guard let profileName = directParameter as? String else {
-      return "error: missing profile name"
+      return WidgetCommandDispatch.missingParameter("profile name")
     }
 
     let profileManager = ProfileManager.shared
-    let success = profileManager.switchToProfile(named: profileName)
-
-    if success {
-      return "ok: switched to profile '\(profileName)'"
-    } else {
-      let availableProfiles = profileManager.profileNames.joined(separator: ", ")
-      return "error: profile '\(profileName)' not found. Available profiles: \(availableProfiles)"
+    guard profileManager.switchToProfile(named: profileName) else {
+      return WidgetCommandDispatch.profileNotFound(
+        profileName, available: profileManager.profileNames)
     }
+    return WidgetCommandDispatch.switchedToProfile(profileName)
   }
 }
 
@@ -133,13 +99,7 @@ class SetProfileCommand: NSScriptCommand {
 class GetProfileCommand: NSScriptCommand {
 
   override func performDefaultImplementation() -> Any? {
-    let profileManager = ProfileManager.shared
-
-    if let activeProfile = profileManager.activeProfile {
-      return activeProfile.name
-    } else {
-      return "error: no active profile"
-    }
+    ProfileManager.shared.activeProfile?.name ?? WidgetCommandDispatch.noActiveProfile
   }
 }
 
@@ -149,7 +109,6 @@ class GetProfileCommand: NSScriptCommand {
 class ListProfilesCommand: NSScriptCommand {
 
   override func performDefaultImplementation() -> Any? {
-    let profileManager = ProfileManager.shared
-    return profileManager.profileNames.joined(separator: ", ")
+    ProfileManager.shared.profileNames.joined(separator: ", ")
   }
 }

@@ -41,7 +41,7 @@ class SystemInfoService: ObservableObject {
 
     private var refreshTimers: [String: Timer] = [:]
     private var cancellables = Set<AnyCancellable>()
-    private let settingsManager = SettingsManager.shared
+    private let settingsManager: SettingsManager
 
     /// An interface that re-attaches counts from zero again, so the whole new reading is this
     /// interval's traffic.
@@ -58,7 +58,8 @@ class SystemInfoService: ObservableObject {
     /// system-wide input freeze (keyboard/mouse unresponsive).
     private let hostPort: mach_port_t = mach_host_self()
 
-    private init() {
+    init(settingsManager: SettingsManager = .shared) {
+        self.settingsManager = settingsManager
         setupKeyboardLayoutObserver()
         setupNotifications()
     }
@@ -81,18 +82,24 @@ class SystemInfoService: ObservableObject {
     }
 
     private func refresh(_ widget: WidgetIdentifier) {
-        switch widget {
-        case .battery: refreshBattery(); refreshCaffeinate()
+        for reading in WidgetRefreshSchedule.readings(for: widget) {
+            collect(reading)
+        }
+    }
+
+    private func collect(_ reading: WidgetRefreshSchedule.Reading) {
+        switch reading {
+        case .battery: refreshBattery()
+        case .caffeinate: refreshCaffeinate()
         case .cpu: refreshCPU()
         case .memory: refreshMemory()
         case .gpu: refreshGPU()
-        case .netstats: refreshNetworkStats()
-        case .diskActivity: refreshDiskStats()
-        case .sound: refreshVolume()
+        case .networkStats: refreshNetworkStats()
+        case .diskStats: refreshDiskStats()
+        case .volume: refreshVolume()
         case .mic: refreshMic()
         case .keyboard: refreshKeyboard()
-        case .storage: refreshVolumes()
-        default: break
+        case .storageVolumes: refreshVolumes()
         }
     }
 
@@ -175,23 +182,7 @@ class SystemInfoService: ObservableObject {
             ticks.append(nice)
         }
 
-        var usage: Double = 0
-        if let previous = previousCPUTicks, previous.count == ticks.count {
-            var totalDiff: UInt64 = 0
-            var idleDiff: UInt64 = 0
-            for i in stride(from: 0, to: ticks.count, by: 4) {
-                let userDiff = ticks[i] - previous[i]
-                let systemDiff = ticks[i+1] - previous[i+1]
-                let idleDiffCPU = ticks[i+2] - previous[i+2]
-                let niceDiff = ticks[i+3] - previous[i+3]
-                totalDiff += userDiff + systemDiff + idleDiffCPU + niceDiff
-                idleDiff += idleDiffCPU
-            }
-            if totalDiff > 0 {
-                // Overall CPU utilization across all cores as percentage 0-100
-                usage = 100.0 * Double(totalDiff - idleDiff) / Double(totalDiff)
-            }
-        }
+        let usage = CPUTicks.usage(previous: previousCPUTicks, current: ticks) ?? 0
         previousCPUTicks = ticks
 
         // Deallocate the cpuInfo buffer
@@ -223,19 +214,14 @@ class SystemInfoService: ObservableObject {
             return 0
         }
 
-        let pageSize = vm_kernel_page_size
-        let active = Double(stats.active_count) * Double(pageSize)
-        let wired = Double(stats.wire_count) * Double(pageSize)
-        let compressed = Double(stats.compressor_page_count) * Double(pageSize)
-        let free = Double(stats.free_count) * Double(pageSize)
-        let inactive = Double(stats.inactive_count) * Double(pageSize)
-
-        // Activity Monitor: Used = Wired + Active + Compressed; Available = Free + Inactive
-        let used = active + wired + compressed
-        let available = free + inactive
-        let total = used + available
-        guard total > 0 else { return 0 }
-        return (used / total) * 100.0
+        // The page size cancels out of the ratio, so the raw counts are enough.
+        return MemoryPressure.percentage(
+            MemoryPressure.Pages(
+                active: UInt64(stats.active_count),
+                wired: UInt64(stats.wire_count),
+                compressed: UInt64(stats.compressor_page_count),
+                free: UInt64(stats.free_count),
+                inactive: UInt64(stats.inactive_count)))
     }
 
     func refreshGPU() {
@@ -403,25 +389,8 @@ class SystemInfoService: ObservableObject {
             // Get interface stats using netstat
             let output = try await ShellExecutor.run("netstat -ibn | awk 'NR>1 && $1 !~ /lo/ {print $1,$7,$10}'")
             
-            var rxBytes: UInt64 = 0
-            var txBytes: UInt64 = 0
-            
-            // Parse output: interface_name rx_bytes tx_bytes
-            let lines = output.split(separator: "\n")
-            for line in lines {
-                let parts = line.split(separator: " ")
-                guard parts.count >= 3 else { continue }
-                
-                let ifName = String(parts[0])
-                guard NetworkInterfaces.isValidDataInterface(ifName) else { continue }
-                
-                if let rx = UInt64(parts[1]), let tx = UInt64(parts[2]) {
-                    rxBytes &+= rx
-                    txBytes &+= tx
-                }
-            }
-
-            return calculateNetworkStats(rxBytes: rxBytes, txBytes: txBytes)
+            let totals = NetstatParser.totals(output)
+            return calculateNetworkStats(rxBytes: totals.received, txBytes: totals.sent)
             
         } catch {
             print("[NetworkStats] netstat fallback failed: \(error)")
@@ -1010,24 +979,11 @@ class SystemInfoService: ObservableObject {
     }
 
     private func startTimers() {
-        let settings = settingsManager.settings.widgets
-        for widget in activeWidgets {
-            let interval: TimeInterval
-            switch widget {
-            case .battery: interval = settings.battery.refreshInterval
-            case .cpu: interval = settings.cpu.refreshInterval
-            case .memory: interval = settings.memory.refreshInterval
-            case .gpu: interval = settings.gpu.refreshInterval
-            case .netstats: interval = settings.netstats.refreshInterval
-            case .diskActivity: interval = settings.diskActivity.refreshInterval
-            case .sound: interval = settings.sound.refreshInterval
-            case .mic: interval = settings.mic.refreshInterval
-            case .keyboard: interval = settings.keyboard.refreshInterval
-            case .storage: interval = settings.storage.refreshInterval
-            default: continue
-            }
-            scheduleTimer(id: widget.rawValue, interval: interval) { [weak self] in
-                self?.refresh(widget)
+        let timers = WidgetRefreshSchedule.timers(
+            for: activeWidgets, in: settingsManager.settings.widgets)
+        for timer in timers {
+            scheduleTimer(id: timer.id, interval: timer.interval) { [weak self] in
+                self?.refresh(timer.widget)
             }
         }
     }

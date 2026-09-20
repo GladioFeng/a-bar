@@ -46,7 +46,7 @@ final class WifiService: ObservableObject {
   private var lastScanDate: Date?
   private var cancellables = Set<AnyCancellable>()
 
-  private let settingsManager = SettingsManager.shared
+  private let settingsManager: SettingsManager
   private let workQueue = DispatchQueue(label: "com.a-bar.wifi", qos: .userInitiated)
 
   private lazy var observer = WifiEventObserver { [weak self] in
@@ -58,7 +58,8 @@ final class WifiService: ObservableObject {
     settingsManager.settings.widgets.wifi
   }
 
-  private init() {
+  init(settingsManager: SettingsManager = .shared) {
+    self.settingsManager = settingsManager
     location.$isAuthorized
       .removeDuplicates()
       .receive(on: DispatchQueue.main)

@@ -59,10 +59,25 @@ class ProfileManager: ObservableObject {
     _ = ProfileManager.shared
   }
 
-  private init() {
+  private let settingsManager: SettingsManager
+  private let notificationCenter: NotificationCenter
+  /// Resolved on use, never during `init`. `LayoutManager.shared` reads `ProfileManager.shared`
+  /// while it builds itself, so holding the layout manager directly would make each singleton's
+  /// initializer wait on the other's.
+  private let layoutManager: () -> LayoutManager
+
+  init(
+    settingsManager: SettingsManager = .shared,
+    notificationCenter: NotificationCenter = .default,
+    layoutManager: @escaping () -> LayoutManager = { .shared }
+  ) {
+    self.settingsManager = settingsManager
+    self.notificationCenter = notificationCenter
+    self.layoutManager = layoutManager
+
     // `SettingsCodec.normalize` guarantees the invariants this relies on: at least one
     // profile, unique ids, exactly one default, and an active id that resolves.
-    let settings = SettingsManager.shared.settings
+    let settings = settingsManager.settings
     let loaded = settings.profiles.isEmpty ? [LayoutProfile.defaultProfile] : settings.profiles
 
     self.profiles = loaded
@@ -90,7 +105,7 @@ class ProfileManager: ObservableObject {
     persistState()
 
     // Notify listeners
-    NotificationCenter.default.post(name: .profileDidChange, object: profile)
+    notificationCenter.post(name: .profileDidChange, object: profile)
 
     return true
   }
@@ -106,7 +121,7 @@ class ProfileManager: ObservableObject {
   /// Apply a profile's layout to the bar
   private func applyProfileToBar(_ profile: LayoutProfile) {
     // Update the layout manager to refresh the bar
-    LayoutManager.shared.updateLayout(profile.multiDisplayLayout)
+    layoutManager().updateLayout(profile.multiDisplayLayout)
   }
 
   /// Create a new profile
@@ -177,7 +192,7 @@ class ProfileManager: ObservableObject {
 
   /// Persist profiles through the one writer that owns the config file.
   private func persistState() {
-    SettingsManager.shared.update { settings in
+    settingsManager.update { settings in
       settings.profiles = self.profiles
       settings.activeProfileId = self.activeProfileId.uuidString
     }

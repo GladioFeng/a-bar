@@ -11,7 +11,7 @@ class AerospaceService: ObservableObject {
 
     private var refreshWorkItem: DispatchWorkItem?
     private let refreshDebounceInterval: TimeInterval = 0.1
-    private let settingsManager = SettingsManager.shared
+    private let settingsManager: SettingsManager
 
     private var aerospacePath: String {
         settingsManager.settings.global.aerospacePath
@@ -20,8 +20,9 @@ class AerospaceService: ObservableObject {
     private var appObservers: [NSObjectProtocol] = []
     private var screenObserver: NSObjectProtocol?
 
-    private init() {
-        // Service initialized but observers not set up until start() is called
+    init(settingsManager: SettingsManager = .shared) {
+        // Observers are not set up until start() is called.
+        self.settingsManager = settingsManager
     }
 
     private func setupObservers() {

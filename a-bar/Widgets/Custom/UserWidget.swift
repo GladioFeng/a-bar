@@ -1,21 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Error types for user widget operations
-enum UserWidgetError: LocalizedError {
-  case duplicateName(String)
-  case widgetNotFound(String)
-
-  var errorDescription: String? {
-    switch self {
-    case .duplicateName(let name):
-      return "A widget with the name '\(name)' already exists. Widget names must be unique."
-    case .widgetNotFound(let name):
-      return "No widget found with the name '\(name)'."
-    }
-  }
-}
-
 /// Captures a reference to the hosting NSView for menu positioning
 struct ViewAnchor: NSViewRepresentable {
   @Binding var nsView: NSView?
@@ -207,7 +192,7 @@ struct UserWidget: View {
       }
     }
     .onReceive(
-      NotificationCenter.default.publisher(for: NSNotification.Name("RefreshUserWidget"))
+      NotificationCenter.default.publisher(for: .refreshUserWidget)
     ) { notification in
       if let widgetId = notification.userInfo?["widgetId"] as? UUID, widgetId == config.id {
         refreshOutput()
@@ -421,71 +406,3 @@ struct UserWidget: View {
   }
 }
 
-class UserWidgetManager: ObservableObject {
-  static let shared = UserWidgetManager()
-
-  private let settingsManager = SettingsManager.shared
-
-  var widgets: [UserWidgetDefinition] {
-    settingsManager.settings.userWidgets
-  }
-
-  private init() {}
-
-  func removeWidget(id: UUID) {
-    settingsManager.update { $0.userWidgets.removeAll { $0.id == id } }
-  }
-
-  @discardableResult
-  func refreshWidget(named name: String) -> Bool {
-    guard let widget = widgets.first(where: { $0.name == name }) else {
-      return false
-    }
-
-    NotificationCenter.default.post(
-      name: NSNotification.Name("RefreshUserWidget"),
-      object: nil,
-      userInfo: ["widgetId": widget.id]
-    )
-
-    return true
-  }
-
-  /// Returns the state the widget ended up in.
-  func toggleWidget(named name: String) -> Result<Bool, UserWidgetError> {
-    setActive(named: name) { !$0 }.map { $0.isActive }
-  }
-
-  /// Returns whether this call actually hid the widget.
-  func hideWidget(named name: String) -> Result<Bool, UserWidgetError> {
-    setActive(named: name) { _ in false }.map { $0.didChange }
-  }
-
-  /// Returns whether this call actually showed the widget.
-  func showWidget(named name: String) -> Result<Bool, UserWidgetError> {
-    setActive(named: name) { _ in true }.map { $0.didChange }
-  }
-
-  /// Set a widget's visibility and persist it, so an AppleScript toggle survives a restart
-  /// and is not reverted by the next save from the Preferences window.
-  private func setActive(named name: String, to newValue: (Bool) -> Bool)
-    -> Result<(isActive: Bool, didChange: Bool), UserWidgetError>
-  {
-    guard let widget = widgets.first(where: { $0.name == name }) else {
-      return .failure(.widgetNotFound(name))
-    }
-
-    let wasActive = widget.isActive
-    let isActive = newValue(wasActive)
-
-    if isActive != wasActive {
-      settingsManager.update { settings in
-        if let index = settings.userWidgets.firstIndex(where: { $0.id == widget.id }) {
-          settings.userWidgets[index].isActive = isActive
-        }
-      }
-    }
-
-    return .success((isActive: isActive, didChange: isActive != wasActive))
-  }
-}

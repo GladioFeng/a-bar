@@ -14,8 +14,39 @@ version="$(git describe --tags --abbrev=0 --match 'v[0-9]*')"
 coverage="$({ xcrun xccov view --report --only-targets "$result_bundle" 2>/dev/null || true; } \
   | awk '$2 == "a-bar.app" { sub(/%/, "", $4); printf "%.1f", $4; found = 1 } END { if (!found) exit 1 }')"
 
+# Coverage of everything that is not a SwiftUI view body.
+#
+# SwiftUI inflates executable-line counts by roughly 4x - WidgetSettingsViews.swift is 1,256
+# source lines and 4,769 executable ones - and views are about 72% of the app by that measure.
+# The overall number is therefore dominated by code that is not unit-testable, and reports
+# ~25% even when every testable line is covered. This second figure is the one that moves when
+# the suite improves. Both are published; neither replaces the other.
+logic_coverage="$({ xcrun xccov view --report --files-for-target a-bar.app --json "$result_bundle" 2>/dev/null || true; } \
+  | python3 -c '
+import json, sys
+
+raw = sys.stdin.read()
+if not raw.strip():
+    sys.exit(1)
+report = json.loads(raw)
+files = report[0]["files"] if isinstance(report, list) else report["files"]
+
+executable = covered = 0
+for entry in files:
+    path = entry["path"].split("/a-bar/a-bar/", 1)[-1]
+    if path.startswith(("Views/", "Widgets/")) or path == "BarView.swift":
+        continue
+    executable += entry["executableLines"]
+    covered += entry["coveredLines"]
+
+if executable == 0:
+    sys.exit(1)
+print("%.1f" % (100.0 * covered / executable))
+')"
+
 if [[ ! "$version" =~ ^v[0-9]+([.][0-9]+)*([-+][0-9A-Za-z.-]+)?$ ]] \
-  || [[ ! "$coverage" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  || [[ ! "$coverage" =~ ^[0-9]+([.][0-9]+)?$ ]] \
+  || [[ ! "$logic_coverage" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   echo "Could not read a safe version or coverage value." >&2
   exit 1
 fi
@@ -50,9 +81,12 @@ badge() {
     "</svg>" > "$output_directory/$file"
 }
 
-coverage_color="$(awk -v coverage_value="$coverage" 'BEGIN {
-  print (coverage_value >= 90 ? "#4c1" : coverage_value >= 80 ? "#97ca00" : coverage_value >= 70 ? "#a4a61d" : coverage_value >= 60 ? "#dfb317" : coverage_value >= 50 ? "#fe7d37" : "#e05d44")
-}')"
+color_for() {
+  awk -v coverage_value="$1" 'BEGIN {
+    print (coverage_value >= 90 ? "#4c1" : coverage_value >= 80 ? "#97ca00" : coverage_value >= 70 ? "#a4a61d" : coverage_value >= 60 ? "#dfb317" : coverage_value >= 50 ? "#fe7d37" : "#e05d44")
+  }'
+}
 
 badge "version" "$version" "#007ec6" "version.svg"
-badge "coverage" "$coverage%" "$coverage_color" "coverage.svg"
+badge "coverage" "$coverage%" "$(color_for "$coverage")" "coverage.svg"
+badge "logic coverage" "$logic_coverage%" "$(color_for "$logic_coverage")" "logic.svg"

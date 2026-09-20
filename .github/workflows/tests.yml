@@ -74,6 +74,6 @@ jobs:
           git checkout --orphan badges
           git rm -rf .
           cp "$RUNNER_TEMP/badges/"*.svg .
-          git add coverage.svg version.svg
+          git add coverage.svg logic.svg version.svg
           git commit -m "Update README badges"
           git push --force origin badges

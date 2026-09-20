@@ -514,17 +514,26 @@ class LayoutManager: ObservableObject {
 
   private var cancellables = Set<AnyCancellable>()
 
-  private init() {
-    // Initialize with active profile's layout
-    self.multiDisplayLayout = ProfileManager.shared.activeProfile?.multiDisplayLayout ?? .defaultLayout
+  init(
+    initialLayout: MultiDisplayLayout,
+    notificationCenter: NotificationCenter = .default
+  ) {
+    self.multiDisplayLayout = initialLayout
 
     // Sync with active profile changes
-    NotificationCenter.default.publisher(for: .profileDidChange)
+    notificationCenter.publisher(for: .profileDidChange)
       .compactMap { $0.object as? LayoutProfile }
       .sink { [weak self] profile in
         self?.multiDisplayLayout = profile.multiDisplayLayout
       }
       .store(in: &cancellables)
+  }
+
+  /// The shared instance starts on whichever profile is active at launch. Kept private so the
+  /// read of `ProfileManager.shared` stays on this one path - see the note on `ProfileManager`'s
+  /// own initializer about not letting the two singletons build each other.
+  private convenience init() {
+    self.init(initialLayout: ProfileManager.shared.activeProfile?.multiDisplayLayout ?? .defaultLayout)
   }
 
   /// Get bar layout for a specific display and position

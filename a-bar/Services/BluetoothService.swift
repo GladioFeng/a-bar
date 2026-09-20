@@ -38,7 +38,7 @@ final class BluetoothService: ObservableObject {
   private var isStarted = false
   private var refreshGeneration = 0
 
-  private let settingsManager = SettingsManager.shared
+  private let settingsManager: SettingsManager
   private let workQueue = DispatchQueue(label: "com.a-bar.bluetooth", qos: .userInitiated)
 
   private lazy var observer = BluetoothNotificationObserver { [weak self] in
@@ -49,7 +49,9 @@ final class BluetoothService: ObservableObject {
     settingsManager.settings.widgets.bluetooth
   }
 
-  private init() {}
+  init(settingsManager: SettingsManager = .shared) {
+    self.settingsManager = settingsManager
+  }
 
   // MARK: - Lifecycle
 

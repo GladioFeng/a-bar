@@ -171,6 +171,34 @@
 		A1000248 /* XBarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000100 /* XBarMenu.swift */; };
 		A1000332 /* XBarMenuBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000332 /* XBarMenuBuilderTests.swift */; };
 		A1000333 /* XBarColorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000333 /* XBarColorTests.swift */; };
+		A1000334 /* ProfileManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000334 /* ProfileManagerTests.swift */; };
+		A1000335 /* LayoutManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000335 /* LayoutManagerTests.swift */; };
+		A1000336 /* BluetoothTypesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000336 /* BluetoothTypesTests.swift */; };
+		A1000337 /* WifiTypesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000337 /* WifiTypesTests.swift */; };
+		A1000249 /* AerospaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2000002 /* AerospaceService.swift */; };
+		A1000338 /* AerospaceServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000338 /* AerospaceServiceTests.swift */; };
+		A1000135 /* WidgetRefreshSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000135 /* WidgetRefreshSchedule.swift */; };
+		A1000250 /* WidgetRefreshSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000135 /* WidgetRefreshSchedule.swift */; };
+		A1000136 /* CPUTicks.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000136 /* CPUTicks.swift */; };
+		A1000251 /* CPUTicks.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000136 /* CPUTicks.swift */; };
+		A1000137 /* MemoryPressure.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000137 /* MemoryPressure.swift */; };
+		A1000252 /* MemoryPressure.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000137 /* MemoryPressure.swift */; };
+		A1000138 /* NetstatParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000138 /* NetstatParser.swift */; };
+		A1000253 /* NetstatParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000138 /* NetstatParser.swift */; };
+		A1000339 /* WidgetRefreshScheduleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000339 /* WidgetRefreshScheduleTests.swift */; };
+		A1000340 /* CPUTicksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000340 /* CPUTicksTests.swift */; };
+		A1000341 /* MemoryPressureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000341 /* MemoryPressureTests.swift */; };
+		A1000342 /* NetstatParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000342 /* NetstatParserTests.swift */; };
+		A1000254 /* SystemInfoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000022 /* SystemInfoService.swift */; };
+		A1000343 /* SystemInfoServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000343 /* SystemInfoServiceTests.swift */; };
+		A1000255 /* BluetoothService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000023 /* BluetoothService.swift */; };
+		A1000344 /* BluetoothServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000344 /* BluetoothServiceTests.swift */; };
+		A1000139 /* UserWidgetManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000139 /* UserWidgetManager.swift */; };
+		A1000256 /* UserWidgetManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000139 /* UserWidgetManager.swift */; };
+		A1000140 /* WidgetCommandDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000140 /* WidgetCommandDispatch.swift */; };
+		A1000257 /* WidgetCommandDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000140 /* WidgetCommandDispatch.swift */; };
+		A1000345 /* UserWidgetManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000345 /* UserWidgetManagerTests.swift */; };
+		A1000346 /* WidgetCommandDispatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000346 /* WidgetCommandDispatchTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -303,6 +331,25 @@
 		B1000331 /* WindowManagerServicesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowManagerServicesTests.swift; sourceTree = "<group>"; };
 		B1000332 /* XBarMenuBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "XBarMenuBuilderTests.swift"; sourceTree = "<group>"; };
 		B1000333 /* XBarColorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "XBarColorTests.swift"; sourceTree = "<group>"; };
+		B1000334 /* ProfileManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProfileManagerTests.swift"; sourceTree = "<group>"; };
+		B1000335 /* LayoutManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LayoutManagerTests.swift"; sourceTree = "<group>"; };
+		B1000336 /* BluetoothTypesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BluetoothTypesTests.swift"; sourceTree = "<group>"; };
+		B1000337 /* WifiTypesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WifiTypesTests.swift"; sourceTree = "<group>"; };
+		B1000338 /* AerospaceServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AerospaceServiceTests.swift"; sourceTree = "<group>"; };
+		B1000135 /* WidgetRefreshSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetRefreshSchedule.swift"; sourceTree = "<group>"; };
+		B1000136 /* CPUTicks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CPUTicks.swift"; sourceTree = "<group>"; };
+		B1000137 /* MemoryPressure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MemoryPressure.swift"; sourceTree = "<group>"; };
+		B1000138 /* NetstatParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NetstatParser.swift"; sourceTree = "<group>"; };
+		B1000339 /* WidgetRefreshScheduleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetRefreshScheduleTests.swift"; sourceTree = "<group>"; };
+		B1000340 /* CPUTicksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CPUTicksTests.swift"; sourceTree = "<group>"; };
+		B1000341 /* MemoryPressureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MemoryPressureTests.swift"; sourceTree = "<group>"; };
+		B1000342 /* NetstatParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NetstatParserTests.swift"; sourceTree = "<group>"; };
+		B1000343 /* SystemInfoServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemInfoServiceTests.swift"; sourceTree = "<group>"; };
+		B1000344 /* BluetoothServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BluetoothServiceTests.swift"; sourceTree = "<group>"; };
+		B1000139 /* UserWidgetManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserWidgetManager.swift"; sourceTree = "<group>"; };
+		B1000140 /* WidgetCommandDispatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetCommandDispatch.swift"; sourceTree = "<group>"; };
+		B1000345 /* UserWidgetManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserWidgetManagerTests.swift"; sourceTree = "<group>"; };
+		B1000346 /* WidgetCommandDispatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetCommandDispatchTests.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -374,6 +421,8 @@
 		G1000004 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				B1000140 /* WidgetCommandDispatch.swift */,
+				B1000139 /* UserWidgetManager.swift */,
 				B1000020 /* YabaiService.swift */,
 				C2000002 /* AerospaceService.swift */,
 				B1000022 /* SystemInfoService.swift */,
@@ -505,6 +554,10 @@
 		G1000009 /* Logic */ = {
 			isa = PBXGroup;
 			children = (
+				B1000138 /* NetstatParser.swift */,
+				B1000137 /* MemoryPressure.swift */,
+				B1000136 /* CPUTicks.swift */,
+				B1000135 /* WidgetRefreshSchedule.swift */,
 				B1000110 /* WidgetDragPayload.swift */,
 				B1000111 /* WidgetReorder.swift */,
 				B1000112 /* UserWidgetIndexRemapper.swift */,
@@ -543,6 +596,19 @@
 		G1000200 /* a-barTests */ = {
 			isa = PBXGroup;
 			children = (
+				B1000346 /* WidgetCommandDispatchTests.swift */,
+				B1000345 /* UserWidgetManagerTests.swift */,
+				B1000344 /* BluetoothServiceTests.swift */,
+				B1000343 /* SystemInfoServiceTests.swift */,
+				B1000342 /* NetstatParserTests.swift */,
+				B1000341 /* MemoryPressureTests.swift */,
+				B1000340 /* CPUTicksTests.swift */,
+				B1000339 /* WidgetRefreshScheduleTests.swift */,
+				B1000338 /* AerospaceServiceTests.swift */,
+				B1000337 /* WifiTypesTests.swift */,
+				B1000336 /* BluetoothTypesTests.swift */,
+				B1000335 /* LayoutManagerTests.swift */,
+				B1000334 /* ProfileManagerTests.swift */,
 				B1000333 /* XBarColorTests.swift */,
 				B1000332 /* XBarMenuBuilderTests.swift */,
 				B1000200 /* SettingsFixtures.swift */,
@@ -674,6 +740,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000140 /* WidgetCommandDispatch.swift in Sources */,
+				A1000139 /* UserWidgetManager.swift in Sources */,
+				A1000138 /* NetstatParser.swift in Sources */,
+				A1000137 /* MemoryPressure.swift in Sources */,
+				A1000136 /* CPUTicks.swift in Sources */,
+				A1000135 /* WidgetRefreshSchedule.swift in Sources */,
 				A1000001 /* ABarApp.swift in Sources */,
 				A1000002 /* AppDelegate.swift in Sources */,
 				A1000003 /* BarWindow.swift in Sources */,
@@ -764,6 +836,28 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000346 /* WidgetCommandDispatchTests.swift in Sources */,
+				A1000345 /* UserWidgetManagerTests.swift in Sources */,
+				A1000257 /* WidgetCommandDispatch.swift in Sources */,
+				A1000256 /* UserWidgetManager.swift in Sources */,
+				A1000344 /* BluetoothServiceTests.swift in Sources */,
+				A1000255 /* BluetoothService.swift in Sources */,
+				A1000343 /* SystemInfoServiceTests.swift in Sources */,
+				A1000254 /* SystemInfoService.swift in Sources */,
+				A1000342 /* NetstatParserTests.swift in Sources */,
+				A1000341 /* MemoryPressureTests.swift in Sources */,
+				A1000340 /* CPUTicksTests.swift in Sources */,
+				A1000339 /* WidgetRefreshScheduleTests.swift in Sources */,
+				A1000253 /* NetstatParser.swift in Sources */,
+				A1000252 /* MemoryPressure.swift in Sources */,
+				A1000251 /* CPUTicks.swift in Sources */,
+				A1000250 /* WidgetRefreshSchedule.swift in Sources */,
+				A1000338 /* AerospaceServiceTests.swift in Sources */,
+				A1000249 /* AerospaceService.swift in Sources */,
+				A1000337 /* WifiTypesTests.swift in Sources */,
+				A1000336 /* BluetoothTypesTests.swift in Sources */,
+				A1000335 /* LayoutManagerTests.swift in Sources */,
+				A1000334 /* ProfileManagerTests.swift in Sources */,
 				A1000333 /* XBarColorTests.swift in Sources */,
 				A1000332 /* XBarMenuBuilderTests.swift in Sources */,
 				A1000248 /* XBarMenu.swift in Sources */,
