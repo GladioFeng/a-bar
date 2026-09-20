@@ -134,7 +134,7 @@ final class WidgetPopoverManager: NSObject, ObservableObject {
   }
 
   private func showPanel() {
-    guard let anchor = anchorView else { return }
+    guard anchorView != nil else { return }
     makePanelIfNeeded()
     guard let panel = panel else { return }
 
@@ -153,40 +153,67 @@ final class WidgetPopoverManager: NSObject, ObservableObject {
         }
       }
 
-      guard let hostView = self.host?.view else { return }
-
-      // compute size
-      let desiredSize = hostView.fittingSize
-      let height = self.maxHeight.map { min($0, desiredSize.height) } ?? desiredSize.height
-      let size = NSSize(width: max(self.minWidth, desiredSize.width), height: height)
-
-      // compute screen position below/above anchor based on bar position
-      guard let win = anchor.window else { return }
-      let rectInWindow = anchor.convert(anchor.bounds, to: win.contentView)
-      let screenRect = win.convertToScreen(rectInWindow)
-
-      // Get screen bounds to prevent drawing outside
-      guard let screen = win.screen else { return }
-      let screenFrame = screen.visibleFrame
-
-      // Calculate horizontal position, aligned to the widget but clamped to screen
-      var x =
-        self.alignment == .centered
-        ? screenRect.midX - (size.width / 2)
-        : screenRect.maxX - size.width
-      x = max(screenFrame.minX + 6, min(x, screenFrame.maxX - size.width - 6))
-
-      // Position popover below widget for top bar, above for bottom bar
-      let y = self.barPosition == .top
-        ? screenRect.minY - size.height - 6
-        : screenRect.maxY + 6
-      let origin = NSPoint(x: x, y: y)
-
-      panel.setFrame(NSRect(origin: origin, size: size), display: true)
+      guard self.layoutPanel() else { return }
       panel.orderFrontRegardless()
 
       self.cancelClose()
     }
+  }
+
+  /// Re-fit the panel to its content while it stays open.
+  ///
+  /// The panel keeps whatever frame it was given when it was shown, so content
+  /// that grows or shrinks on its own — a device list that appears when a radio
+  /// is switched back on — either leaves dead space or gets squeezed into a
+  /// sliver with a scroller. Widgets call this when the state their popover
+  /// renders changes.
+  func refreshSize() {
+    guard isOpen else { return }
+    DispatchQueue.main.async {
+      self.layoutPanel()
+    }
+  }
+
+  /// Size the panel to its hosted content and place it against its anchor.
+  /// Returns false when it cannot be placed yet (no anchor, no window, no host).
+  @discardableResult
+  private func layoutPanel() -> Bool {
+    guard let panel = panel, let anchor = anchorView, let hostView = host?.view else { return false }
+
+    // Flush any pending SwiftUI layout first: right after the content changed,
+    // `fittingSize` still reports the size it had a layout pass ago.
+    hostView.layoutSubtreeIfNeeded()
+
+    // compute size
+    let desiredSize = hostView.fittingSize
+    let height = maxHeight.map { min($0, desiredSize.height) } ?? desiredSize.height
+    let size = NSSize(width: max(minWidth, desiredSize.width), height: height)
+    guard size.height > 0 else { return false }
+
+    // compute screen position below/above anchor based on bar position
+    guard let win = anchor.window else { return false }
+    let rectInWindow = anchor.convert(anchor.bounds, to: win.contentView)
+    let screenRect = win.convertToScreen(rectInWindow)
+
+    // Get screen bounds to prevent drawing outside
+    guard let screen = win.screen else { return false }
+    let screenFrame = screen.visibleFrame
+
+    // Calculate horizontal position, aligned to the widget but clamped to screen
+    var x =
+      alignment == .centered
+      ? screenRect.midX - (size.width / 2)
+      : screenRect.maxX - size.width
+    x = max(screenFrame.minX + 6, min(x, screenFrame.maxX - size.width - 6))
+
+    // Position popover below widget for top bar, above for bottom bar
+    let y = barPosition == .top
+      ? screenRect.minY - size.height - 6
+      : screenRect.maxY + 6
+    let origin = NSPoint(x: x, y: y)
+
+    panel.setFrame(NSRect(origin: origin, size: size), display: true)
+    return true
   }
 
   private func scheduleClose(after delay: TimeInterval = 0.6) {

@@ -45,7 +45,7 @@ struct BluetoothWidget: View {
           }
           if let label = barLabel {
             Text(label)
-              .foregroundColor(info.isPoweredOn ? fgColor : theme.minor)
+              .foregroundColor(info.isPoweredOn ? fgColor : theme.red)
           }
         }
       }
@@ -67,13 +67,22 @@ struct BluetoothWidget: View {
         // popover opening, and the battery poll must stop in those cases too.
         bluetooth.setPopoverOpen(isOpen)
       }
+      .onChange(of: info) { _ in
+        // The popover lists devices, so its height follows the radio state and
+        // the pairing list. Re-fit the panel or it keeps the size it had when
+        // it was opened — toggling the radio off and back on would otherwise
+        // squeeze the list into a scroller.
+        popoverManager.refreshSize()
+      }
     }
   }
 
   /// Bar text next to the icon. Nil renders the icon alone.
   private var barLabel: String? {
     guard info.hasController else { return "n/a" }
-    guard info.isPoweredOn else { return "Off" }
+    // The slashed red icon already says the radio is off, so the label would
+    // only repeat it — and it reads as a blank gap next to the icon.
+    guard info.isPoweredOn else { return bluetoothSettings.showIcon ? nil : "Off" }
 
     let connected = info.connectedDevices
     if connected.isEmpty { return nil }
@@ -165,7 +174,7 @@ private struct BluetoothPopoverContent: View {
       }
       .buttonStyle(.plain)
       .font(globalSettings.settingsFont(scaledBy: 0.85))
-      .foregroundColor(info.isPoweredOn ? theme.green : theme.minor)
+      .foregroundColor(info.isPoweredOn ? theme.green : theme.red)
       .disabled(!info.canTogglePower)
       .help(
         info.canTogglePower
@@ -200,7 +209,7 @@ private struct BluetoothPopoverContent: View {
   private func sectionCaption(_ text: String) -> some View {
     Text(text)
       .font(globalSettings.settingsFont(scaledBy: 0.8))
-      .foregroundColor(theme.minor)
+      .foregroundColor(theme.foreground.opacity(0.6))
       .padding(.top, 4)
       .padding(.bottom, 2)
   }
@@ -208,7 +217,7 @@ private struct BluetoothPopoverContent: View {
   private func emptyState(_ text: String) -> some View {
     Text(text)
       .font(globalSettings.settingsFont(scaledBy: 0.9))
-      .foregroundColor(theme.minor)
+      .foregroundColor(theme.foreground.opacity(0.7))
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.vertical, 6)
   }
@@ -232,11 +241,11 @@ private struct DeviceRow: View {
       Image(systemName: device.kind.symbolName)
         .font(.system(size: 11))
         .frame(width: 16)
-        .foregroundColor(device.isConnected ? theme.accent : theme.minor)
+        .foregroundColor(device.isConnected ? theme.accent : theme.foreground.opacity(0.65))
 
       Text(device.name)
         .font(globalSettings.settingsFont(scaledBy: 0.9))
-        .foregroundColor(device.isConnected ? theme.foreground : theme.minor)
+        .foregroundColor(device.isConnected ? theme.foreground : theme.foreground.opacity(0.75))
         .lineLimit(1)
         .truncationMode(.tail)
 
@@ -286,6 +295,6 @@ private struct DeviceRow: View {
   private func batteryLabel(_ prefix: String?, _ level: Int) -> some View {
     Text(prefix.map { "\($0) \(level)%" } ?? "\(level)%")
       .font(globalSettings.settingsFont(scaledBy: 0.8))
-      .foregroundColor(level < 20 ? theme.red : theme.minor)
+      .foregroundColor(level < 20 ? theme.red : theme.foreground.opacity(0.7))
   }
 }

@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 _No unreleased changes_
 
+## v1.5.2 - 2026-09-20
+
+- fix: update color handling in Bluetooth widget for better visibility and consistency
+
 ## v1.5.1 - 2026-09-20
 
 - fix: declare NSBluetoothAlwaysUsageDescription so the app no longer crashes at launch on macOS
