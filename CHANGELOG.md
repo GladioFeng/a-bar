@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-_No unreleased changes_
+- feat: refactor Wi-Fi functionality into a dedicated service like the Bluetooth widget
 
 ## v1.5.2 - 2026-09-20
 

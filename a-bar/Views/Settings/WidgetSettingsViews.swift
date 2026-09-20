@@ -317,14 +317,24 @@ struct NetworkSettingsView: View, ABarSettingsBindable {
         Section {
           Text("WiFi").font(.headline)
           Toggle("Show icon", isOn: binding(\.widgets.wifi.showIcon))
-          Toggle("Toggle WiFi on click", isOn: binding(\.widgets.wifi.toggleOnClick))
           Toggle("Hide network name", isOn: binding(\.widgets.wifi.hideNetworkName))
+          Toggle("Show signal strength", isOn: binding(\.widgets.wifi.showSignalStrength))
           Toggle("Hide when disabled", isOn: binding(\.widgets.wifi.hideWhenDisabled))
 
           VStack(alignment: .leading) {
             Text("Network device")
-            TextField("e.g., en0", text: binding(\.widgets.wifi.networkDevice))
+            TextField("Leave empty to auto-detect", text: binding(\.widgets.wifi.networkDevice))
               .textFieldStyle(RoundedBorderTextFieldStyle())
+          }
+
+          HStack(spacing: 4) {
+            Text("Scan interval")
+            TextField(
+              "", value: binding(\.widgets.wifi.scanInterval), formatter: NumberFormatter()
+            )
+            .frame(width: 60)
+            .textFieldStyle(RoundedBorderTextFieldStyle())
+            Text("seconds")
           }
 
           ThemeColorPicker(

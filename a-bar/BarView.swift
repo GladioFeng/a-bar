@@ -128,6 +128,7 @@ struct WidgetContainer: View {
   @EnvironmentObject var aerospaceService: AerospaceService
   @EnvironmentObject var systemInfoService: SystemInfoService
   @EnvironmentObject var bluetoothService: BluetoothService
+  @EnvironmentObject var wifiService: WifiService
 
   var body: some View {
     Group {
@@ -149,7 +150,7 @@ struct WidgetContainer: View {
       case .date:
         DateWidget()
       case .wifi:
-        WifiWidget()
+        WifiWidget(position: position)
       case .bluetooth:
         BluetoothWidget(position: position)
       case .sound:

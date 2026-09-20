@@ -14,7 +14,6 @@ class SystemInfoService: ObservableObject {
     @Published private(set) var memoryPressure: Double = 0
     @Published private(set) var gpuUsage: Double = 0
     @Published private(set) var networkStats = NetworkStats()
-    @Published private(set) var wifiInfo = WifiInfo()
     @Published private(set) var volumeLevel: Float = 0
     @Published private(set) var isMuted: Bool = false
     @Published private(set) var audioOutputDeviceName: String = ""
@@ -75,7 +74,6 @@ class SystemInfoService: ObservableObject {
         refreshGPU()
         refreshNetworkStats()
         refreshDiskStats()
-        refreshWifi()
         refreshVolume()
         refreshMic()
         refreshKeyboard()
@@ -96,7 +94,6 @@ class SystemInfoService: ObservableObject {
         refreshGPU()
         refreshNetworkStats()
         refreshDiskStats()
-        refreshWifi()
         refreshVolume()
         refreshMic()
         refreshKeyboard()
@@ -573,38 +570,6 @@ class SystemInfoService: ObservableObject {
         previousDiskBytes = (readBytes, writeBytes)
         lastDiskCheckTime = now
         return DiskIOStats()
-    }
-
-    func refreshWifi() {
-        Task {
-            let info = await getWifiInfo()
-            await MainActor.run {
-                self.wifiInfo = info
-            }
-        }
-    }
-
-    private func getWifiInfo() async -> WifiInfo {
-        var info = WifiInfo()
-        let device = settingsManager.settings.widgets.wifi.networkDevice
-
-        do {
-            let statusOutput = try await ShellExecutor.run(
-                "ifconfig \(device) | grep status | cut -c 10-")
-            info.isActive = statusOutput.trimmingCharacters(in: .whitespacesAndNewlines) == "active"
-
-            if info.isActive {
-                // Get SSID using airport command which is more reliable
-                let ssidOutput = try await ShellExecutor.run(
-                    "/System/Library/PrivateFrameworks/Apple80211.framework/Resources/airport -I | awk '/ SSID/ {print $2}'"
-                )
-                info.ssid = ssidOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-        } catch {
-            print("Error getting WiFi info: \(error)")
-        }
-
-        return info
     }
 
     private enum AudioDeviceKind {
@@ -1171,11 +1136,6 @@ class SystemInfoService: ObservableObject {
             self?.refreshDiskStats()
         }
 
-        // WiFi timer
-        scheduleTimer(id: "wifi", interval: settings.wifi.refreshInterval) { [weak self] in
-            self?.refreshWifi()
-        }
-
         // Volume timer
         scheduleTimer(id: "volume", interval: settings.sound.refreshInterval) { [weak self] in
             self?.refreshVolume()
@@ -1256,11 +1216,6 @@ struct BatteryInfo: Equatable {
     var isLow: Bool {
         percentage < 20 && !isCharging
     }
-}
-
-struct WifiInfo: Equatable {
-    var isActive: Bool = false
-    var ssid: String = ""
 }
 
 struct StorageVolume: Identifiable, Equatable {

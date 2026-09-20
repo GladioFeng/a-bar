@@ -675,13 +675,57 @@ struct DateWidgetSettings: Codable, Equatable {
 }
 
 struct WifiWidgetSettings: Codable, Equatable {
+  /// Safety net only: CoreWLAN events carry state changes, so this can stay slow.
   var refreshInterval: TimeInterval = 20
+  /// Minimum delay between active scans. macOS rate-limits them and returns stale
+  /// results for scans made too close together.
+  var scanInterval: TimeInterval = 15
   var hideWhenDisabled: Bool = false
-  var toggleOnClick: Bool = true
-  var networkDevice: String = "en0"
+  /// Empty means auto-detect the first Wi-Fi interface macOS reports.
+  var networkDevice: String = ""
   var hideNetworkName: Bool = false
+  var showSignalStrength: Bool = true
+  var maxNetworkNameLength: Int = 15
   var backgroundColor: ThemeColor = .red
   var showIcon: Bool = true
+
+  init() {}
+
+  /// Custom decoder for backward compatibility. The synthesized one requires every key
+  /// to be present — a default value is not a fallback — so adding a field would make
+  /// an older saved payload throw, and `WidgetSettings` would quietly swap in a blank
+  /// `WifiWidgetSettings()`, losing the settings the user had. Decoding each field
+  /// independently also drops removed keys (`toggleOnClick`) without complaint.
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let defaults = WifiWidgetSettings()
+
+    refreshInterval =
+      try container.decodeIfPresent(TimeInterval.self, forKey: .refreshInterval)
+      ?? defaults.refreshInterval
+    scanInterval =
+      try container.decodeIfPresent(TimeInterval.self, forKey: .scanInterval)
+      ?? defaults.scanInterval
+    hideWhenDisabled =
+      try container.decodeIfPresent(Bool.self, forKey: .hideWhenDisabled)
+      ?? defaults.hideWhenDisabled
+    networkDevice =
+      try container.decodeIfPresent(String.self, forKey: .networkDevice)
+      ?? defaults.networkDevice
+    hideNetworkName =
+      try container.decodeIfPresent(Bool.self, forKey: .hideNetworkName)
+      ?? defaults.hideNetworkName
+    showSignalStrength =
+      try container.decodeIfPresent(Bool.self, forKey: .showSignalStrength)
+      ?? defaults.showSignalStrength
+    maxNetworkNameLength =
+      try container.decodeIfPresent(Int.self, forKey: .maxNetworkNameLength)
+      ?? defaults.maxNetworkNameLength
+    backgroundColor =
+      try container.decodeIfPresent(ThemeColor.self, forKey: .backgroundColor)
+      ?? defaults.backgroundColor
+    showIcon = try container.decodeIfPresent(Bool.self, forKey: .showIcon) ?? defaults.showIcon
+  }
 }
 
 struct BluetoothWidgetSettings: Codable, Equatable {

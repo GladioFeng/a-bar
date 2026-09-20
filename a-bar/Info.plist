@@ -42,6 +42,10 @@
 		<key>NSBluetoothAlwaysUsageDescription</key>
 		<string>a-bar needs Bluetooth access to show the power state of your paired devices,
 			their connection status and their battery levels in the bar.</string>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>a-bar needs location access because macOS only reveals Wi-Fi network names
+			to apps authorized for Location Services. Your location is never read or
+			stored.</string>
 		<key>NSAppleScriptEnabled</key>
 		<true />
 		<key>OSAScriptingDefinition</key>

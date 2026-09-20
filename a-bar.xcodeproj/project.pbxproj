@@ -28,6 +28,7 @@
 		A1000020 /* YabaiService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000020 /* YabaiService.swift */; };
 		A1000022 /* SystemInfoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000022 /* SystemInfoService.swift */; };
 		A1000023 /* BluetoothService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000023 /* BluetoothService.swift */; };
+		A1000024 /* WifiService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000024 /* WifiService.swift */; };
 		A1000030 /* SpacesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000030 /* SpacesWidget.swift */; };
 		A1000031 /* SpaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000031 /* SpaceView.swift */; };
 		A1000032 /* OpenedAppsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000032 /* OpenedAppsView.swift */; };
@@ -87,6 +88,7 @@
 		B1000020 /* YabaiService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YabaiService.swift; sourceTree = "<group>"; };
 		B1000022 /* SystemInfoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemInfoService.swift; sourceTree = "<group>"; };
 		B1000023 /* BluetoothService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothService.swift; sourceTree = "<group>"; };
+		B1000024 /* WifiService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WifiService.swift; sourceTree = "<group>"; };
 		B1000030 /* SpacesWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesWidget.swift; sourceTree = "<group>"; };
 		B1000031 /* SpaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceView.swift; sourceTree = "<group>"; };
 		B1000032 /* OpenedAppsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenedAppsView.swift; sourceTree = "<group>"; };
@@ -186,6 +188,7 @@
 				C2000002 /* AerospaceService.swift */,
 				B1000022 /* SystemInfoService.swift */,
 				B1000023 /* BluetoothService.swift */,
+				B1000024 /* WifiService.swift */,
 				B1000084 /* RefreshWidgetCommand.swift */,
 			B1000085 /* XBarParser.swift */,
 			);
@@ -398,6 +401,7 @@
 				A1000020 /* YabaiService.swift in Sources */,
 				A1000022 /* SystemInfoService.swift in Sources */,
 				A1000023 /* BluetoothService.swift in Sources */,
+				A1000024 /* WifiService.swift in Sources */,
 				A1000084 /* RefreshWidgetCommand.swift in Sources */,
 				A1000030 /* SpacesWidget.swift in Sources */,
 				A1000031 /* SpaceView.swift in Sources */,

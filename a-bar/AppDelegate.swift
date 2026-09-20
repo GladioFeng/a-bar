@@ -33,6 +33,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   /// System info service for system metrics
   let systemInfoService = SystemInfoService.shared
   let bluetoothService = BluetoothService.shared
+  let wifiService = WifiService.shared
 
   /// Layout manager for widget arrangement
   let layoutManager = LayoutManager.shared
@@ -256,6 +257,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Start system info service
     systemInfoService.start()
     bluetoothService.start()
+    wifiService.start()
   }
 
   // Subscribe to settings changes to update bar windows and launch at login status
@@ -360,6 +362,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     systemInfoService.refresh()
     bluetoothService.refresh()
+    wifiService.refresh()
     barWindows.values.forEach { $0.refresh() }
   }
 

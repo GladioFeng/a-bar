@@ -83,7 +83,11 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for gu
 
 ## AI notice
 
-I wrote this with some help from Claude Opus: it mainly worked on the interfaces with native macOS APIs, layout builder and the profile system. I'm still in the process of learning Swift and SwiftUI, so I expect some code to be unoptimized or not following best practices. If you have suggestions for improvement, please let me know!
+I wrote this with some help from Claude Opus: it mainly worked on the interfaces with native macOS APIs, layout builder and the profile system. I'm still in the process of learning Swift and SwiftUI, so I expect some code to be unoptimized or not following best practices.
+
+**I'm now mainly using Claude Code for maintaining and improving the project.**
+
+If you have suggestions for improvement, please let me know!
 
 ## License
 
