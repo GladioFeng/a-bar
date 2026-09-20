@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- fix: a single unrecognised value in the config no longer resets every setting - unknown widgets, themes and malformed values are now repaired one value at a time
+- fix: a config file that cannot be read is preserved and quarantined instead of being overwritten with defaults, with the last known good config kept as a backup
+- fix: launch at login had no effect - the toggle was wired to a local state while the app unregistered the login item on every settings change
+- fix: the menu bar bar-visibility toggle and the AppleScript widget commands now persist, and are no longer reverted by the next save from Preferences
+- fix: layouts saved from before the profile system are recovered instead of silently reset
+- fix: selecting a profile to edit no longer marks its layout as modified, which could write it to the wrong profile
+- refactor: the config file is now the single source of truth with one writer, defaults come only from the property initializers, and profile invariants are enforced on every load
+- test: add a unit test target covering settings decoding, repair, migration and persistence
 - feat: refactor Wi-Fi functionality into a dedicated service like the Bluetooth widget
 
 ## v1.5.2 - 2026-09-20

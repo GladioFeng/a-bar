@@ -48,395 +48,199 @@ enum ThemeColor: String, Codable, CaseIterable, Identifiable {
 }
 
 /// Manages application settings with persistence
+///
+/// There is exactly one writer of the config file: every change goes through `update`
+/// (immediate, for things toggled outside the Preferences window) or `saveSettings`
+/// (explicit, for the Preferences draft). `SettingsStore` owns the file, `SettingsCodec`
+/// owns decoding and normalization.
 class SettingsManager: ObservableObject {
   static let shared = SettingsManager()
 
-  @Published var settings: ABarSettings
+  /// The settings the app is running on.
+  @Published private(set) var settings: ABarSettings
+
+  /// The copy the Preferences window edits; only `saveSettings()` promotes it.
   @Published var draftSettings: ABarSettings
   @Published var hasUnsavedChanges: Bool = false
-  
+
   /// The profile currently being edited in the Layout settings
   /// This is NOT the same as the active profile - it's just what's being edited
   @Published var editingProfileId: UUID? = nil
-  
-  /// Draft layout being edited (separate from profiles)
-  @Published var draftLayout: MultiDisplayLayout = .defaultLayout
-  
-  /// Track whether the layout has been modified during this session
-  private var layoutModified: Bool = false
 
-  private let settingsKey = "abar-settings"
-  private let userDefaults = UserDefaults.standard
+  /// Draft layout being edited (separate from profiles)
+  @Published var draftLayout: MultiDisplayLayout
+
+  /// What the last load had to say for itself: recovered values, a fallback source, or
+  /// degraded mode. Nil when the config file loaded cleanly.
+  @Published private(set) var loadSummary: String?
+
+  private let store: SettingsStore
+
+  /// The layout the editor started from. `draftLayout` differing from it is what "the layout
+  /// was modified" means - deriving it beats a flag raced against a debounced publisher.
+  private var layoutBaseline: MultiDisplayLayout
+
   private var cancellables = Set<AnyCancellable>()
 
-  /// Path to the configuration file in the user's home directory
-  private var configFilePath: URL? {
-    guard let homeDir = FileManager.default.homeDirectoryForCurrentUser as URL? else {
-      return nil
-    }
-    return homeDir.appendingPathComponent(".a-barrc")
+  private var layoutModified: Bool { draftLayout != layoutBaseline }
+
+  /// True when the config file could not be read, in which case the app will not overwrite
+  /// it until the user explicitly saves.
+  var isDegraded: Bool { store.isDegraded }
+
+  /// Layout of the profile the bar is currently using.
+  var activeLayout: MultiDisplayLayout { SettingsManager.activeLayout(in: settings) }
+
+  private convenience init() {
+    self.init(store: SettingsStore())
   }
 
-  private init() {
-    // Load settings from UserDefaults
-    let userDefaultsSettings: ABarSettings
-    if let data = userDefaults.data(forKey: settingsKey) {
-      if let decoded = try? JSONDecoder().decode(ABarSettings.self, from: data) {
-        userDefaultsSettings = decoded
-      } else if let recovered = SettingsManager.recoverSettingsByMergingDefaults(with: data) {
-        userDefaultsSettings = recovered
-        // persist the merged settings back so future loads succeed
-        if let encoded = try? JSONEncoder().encode(recovered) {
-          userDefaults.set(encoded, forKey: settingsKey)
-        }
-      } else {
-        userDefaultsSettings = ABarSettings()
-      }
-    } else {
-      userDefaultsSettings = ABarSettings()
-    }
+  init(store: SettingsStore) {
+    self.store = store
 
-    // Initialize properties first before using self
-    self.settings = userDefaultsSettings
-    self.draftSettings = userDefaultsSettings
+    let result = store.load()
+    let layout = SettingsManager.activeLayout(in: result.settings)
+
+    self.settings = result.settings
+    self.draftSettings = result.settings
     self.hasUnsavedChanges = false
+    self.draftLayout = layout
+    self.layoutBaseline = layout
+    self.loadSummary = result.summary
 
-    // Load settings from config file and merge (after initialization)
-    if let fileSettings = loadSettingsFromFile() {
-      self.settings = fileSettings
-      self.draftSettings = fileSettings
+    if let summary = result.summary {
+      print("ℹ️ a-bar settings: \(summary)")
     }
 
     // Monitor changes to draftSettings with debounce to avoid constant re-renders
     $draftSettings
       .dropFirst()  // Skip the initial value
       .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
-      .sink { [weak self] newDraft in
-        guard let self = self else { return }
-        self.hasUnsavedChanges = (newDraft != self.settings)
+      .sink { [weak self] _ in
+        self?.refreshUnsavedState()
       }
       .store(in: &cancellables)
-    
+
     // Monitor changes to draftLayout
     $draftLayout
       .dropFirst()  // Skip the initial value
       .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
       .sink { [weak self] _ in
-        guard let self = self else { return }
-        self.layoutModified = true
-        self.hasUnsavedChanges = true
+        self?.refreshUnsavedState()
       }
       .store(in: &cancellables)
-    
-    // Initialize draftLayout with the active profile's layout after a delay
-    // to avoid circular dependency (ProfileManager -> SettingsManager -> ProfileManager)
-    DispatchQueue.main.async { [weak self] in
-      guard let self = self else { return }
-      if let activeProfile = ProfileManager.shared.activeProfile {
-        self.draftLayout = activeProfile.multiDisplayLayout
-        // Reset the modified flag since this is just initialization
-        self.layoutModified = false
-      }
-    }
   }
 
-  func saveSettingsNow(_ settings: ABarSettings) {
-    if let encoded = try? JSONEncoder().encode(settings) {
-      userDefaults.set(encoded, forKey: settingsKey)
+  /// The layout of the active profile, resolved without touching `ProfileManager` so that
+  /// initialization cannot recurse back into this type.
+  private static func activeLayout(in settings: ABarSettings) -> MultiDisplayLayout {
+    let activeId = settings.activeProfileId.flatMap(UUID.init(uuidString:))
+    let profile = settings.profiles.first { $0.id == activeId } ?? settings.profiles.first
+    return profile?.multiDisplayLayout ?? .defaultLayout
+  }
+
+  private func refreshUnsavedState() {
+    hasUnsavedChanges = layoutModified || draftSettings != settings
+  }
+
+  /// Apply a change to the running settings, persist it, and mirror it into the draft so
+  /// that saving from Preferences afterwards cannot silently revert it.
+  ///
+  /// This is the only way to change `settings`: the menu bar, the AppleScript commands and
+  /// `ProfileManager` all come through here.
+  ///
+  /// The change is applied to both copies, which may hold different lists while Preferences
+  /// is open, so express it in terms that are safe against that: address collection elements
+  /// by id rather than by index.
+  func update(_ mutate: (inout ABarSettings) -> Void) {
+    var updatedDraft = draftSettings
+    mutate(&updatedDraft)
+    SettingsCodec.normalize(&updatedDraft)
+    if updatedDraft != draftSettings {
+      draftSettings = updatedDraft
     }
-    saveSettingsToFile(settings)
+
+    var updated = settings
+    mutate(&updated)
+    SettingsCodec.normalize(&updated)
+    guard updated != settings else { return }
+
+    settings = updated
+    store.save(updated)
+  }
+
+  /// Write any pending change to disk immediately. Called on termination.
+  func flush() {
+    store.flush()
   }
 
   func saveSettings() {
-    // Only save the layout if it was actually modified during this session
-    if layoutModified {
-      // Save the layout to the profile being edited (not necessarily the active one)
-      if let editId = editingProfileId {
-        ProfileManager.shared.updateProfileLayout(id: editId, layout: draftLayout)
-      } else if let activeId = ProfileManager.shared.activeProfile?.id {
-        // Fallback: save to active profile if no editing profile is set
-        ProfileManager.shared.updateProfileLayout(id: activeId, layout: draftLayout)
-      }
-      layoutModified = false
+    // Only save the layout if it was actually modified during this session, and only to the
+    // profile being edited - never to whichever profile happens to be active.
+    if layoutModified, let editingProfileId = editingProfileId {
+      ProfileManager.shared.updateProfileLayout(id: editingProfileId, layout: draftLayout)
     }
-    
-    // Sync profiles from ProfileManager before saving
-    draftSettings.profiles = ProfileManager.shared.profiles
-    draftSettings.activeProfileId = ProfileManager.shared.activeProfileId.uuidString
-    
-    settings = draftSettings
-    saveSettingsNow(settings)
+    layoutBaseline = draftLayout
+
+    // Profiles are owned by ProfileManager and already persisted through `update`.
+    draftSettings.profiles = settings.profiles
+    draftSettings.activeProfileId = settings.activeProfileId
+
+    var updated = draftSettings
+    SettingsCodec.normalize(&updated)
+    draftSettings = updated
+    settings = updated
+
+    // An explicit save also clears degraded mode: the user has seen what the app is running
+    // on and chose to keep it.
+    store.saveExplicitly(updated)
     hasUnsavedChanges = false
   }
 
   func resetToDefaults() {
-    draftSettings = ABarSettings()
+    var defaults = ABarSettings()
+    // Profiles are not appearance defaults - resetting the look should not delete them.
+    defaults.profiles = settings.profiles
+    defaults.activeProfileId = settings.activeProfileId
+    SettingsCodec.normalize(&defaults)
+
+    draftSettings = defaults
+    loadLayoutForEditing(activeLayout)
   }
 
   func discardChanges() {
     draftSettings = settings
-    // Restore the layout from the active profile
-    if let activeProfile = ProfileManager.shared.activeProfile {
-      draftLayout = activeProfile.multiDisplayLayout
-    }
-    layoutModified = false
+    loadLayoutForEditing(activeLayout)
     hasUnsavedChanges = false
   }
-  
+
+  /// Bring the draft back in line with the running settings, used when the Preferences
+  /// window opens so that changes made elsewhere show up. Keeps edits in progress.
+  func rebaseDraftIfClean() {
+    guard !hasUnsavedChanges else { return }
+    discardChanges()
+  }
+
   /// Load a layout for editing without marking it as modified
   func loadLayoutForEditing(_ layout: MultiDisplayLayout) {
+    layoutBaseline = layout
     draftLayout = layout
-    // Reset the modified flag since we're just loading, not editing
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self] in
-      self?.layoutModified = false
-    }
-  }
-
-  /// Save settings to the config file (~/.a-barrc)
-  private func saveSettingsToFile(_ settings: ABarSettings) {
-    guard let filePath = configFilePath else {
-      print("⚠️ Unable to determine config file path")
-      return
-    }
-
-    do {
-      let encoder = JSONEncoder()
-      encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-      let data = try encoder.encode(settings)
-      try data.write(to: filePath, options: .atomic)
-    } catch {
-      print("⚠️ Failed to save settings to file: \(error.localizedDescription)")
-    }
-  }
-
-  /// Load settings from the config file (~/.a-barrc)
-  private func loadSettingsFromFile() -> ABarSettings? {
-    guard let filePath = configFilePath else {
-      return nil
-    }
-
-    guard FileManager.default.fileExists(atPath: filePath.path) else {
-      print("ℹ️ Config file not found at \(filePath.path)")
-      return nil
-    }
-
-    guard let data = try? Data(contentsOf: filePath) else {
-      print("⚠️ Failed to read config file at \(filePath.path)")
-      return nil
-    }
-
-    // First, validate that it's valid JSON
-    guard (try? JSONSerialization.jsonObject(with: data, options: [])) != nil else {
-      print("⚠️ Config file contains invalid JSON - skipping import")
-      return nil
-    }
-
-    // Try to decode with standard decoder
-    let decoder = JSONDecoder()
-    do {
-      let settings = try decoder.decode(ABarSettings.self, from: data)
-      if let validated = validateSettings(settings) {
-        return validated
-      } else {
-        print("⚠️ Settings validation failed - using recovery mode")
-        return tryRecoverSettings(from: data)
-      }
-    } catch let error as DecodingError {
-      print("⚠️ Decoding error: \(describeDecodingError(error))")
-      return tryRecoverSettings(from: data)
-    } catch {
-      print("⚠️ Failed to load settings: \(error.localizedDescription)")
-      return tryRecoverSettings(from: data)
-    }
-  }
-
-  /// Attempt to recover settings by merging with defaults
-  private func tryRecoverSettings(from data: Data) -> ABarSettings? {
-    if let recovered = SettingsManager.recoverSettingsByMergingDefaults(with: data) {
-      if let validated = validateSettings(recovered) {
-        // Save the recovered settings back to file to prevent future errors
-        saveSettingsToFile(validated)
-        return validated
-      }
-    }
-    print("⚠️ Unable to recover settings - using defaults")
-    return nil
-  }
-
-  /// Validate settings to ensure they contain sensible values
-  private func validateSettings(_ settings: ABarSettings) -> ABarSettings? {
-    var validated = settings
-
-    // Validate global settings
-    if validated.global.barHeight < 10 || validated.global.barHeight > 100 {
-      print("⚠️ Invalid barHeight (\(validated.global.barHeight)), using default")
-      validated.global.barHeight = 34
-    }
-
-    if validated.global.fontSize < 6 || validated.global.fontSize > 72 {
-      print("⚠️ Invalid fontSize (\(validated.global.fontSize)), using default")
-      validated.global.fontSize = 11
-    }
-    
-    if validated.global.barHorizontalPadding < 0 || validated.global.barHorizontalPadding > 50 {
-      print("⚠️ Invalid barHorizontalPadding (\(validated.global.barHorizontalPadding)), using default")
-      validated.global.barHorizontalPadding = 8
-    }
-    
-    if validated.global.barVerticalPadding < 0 || validated.global.barVerticalPadding > 50 {
-      print("⚠️ Invalid barVerticalPadding (\(validated.global.barVerticalPadding)), using default")
-      validated.global.barVerticalPadding = 4
-    }
-    
-    if validated.global.barDistanceFromEdges < 0 || validated.global.barDistanceFromEdges > 50 {
-      print("⚠️ Invalid barDistanceFromEdges (\(validated.global.barDistanceFromEdges)), using default")
-      validated.global.barDistanceFromEdges = 4
-    }
-    
-    if validated.global.barCornerRadius < 0 || validated.global.barCornerRadius > 50 {
-      print("⚠️ Invalid barCornerRadius (\(validated.global.barCornerRadius)), using default")
-      validated.global.barCornerRadius = 6
-    }
-    
-    if validated.global.barOpacity < 0 || validated.global.barOpacity > 100 {
-      print("⚠️ Invalid barOpacity (\(validated.global.barOpacity)), using default")
-      validated.global.barOpacity = 90
-    }
-    
-    if validated.global.barElementsCornerRadius < 0 || validated.global.barElementsCornerRadius > 50 {
-      print("⚠️ Invalid barElementsCornerRadius (\(validated.global.barElementsCornerRadius)), using default")
-      validated.global.barElementsCornerRadius = 4
-    }
-
-    if validated.global.barElementGap < 0 || validated.global.barElementGap > 50 {
-      print("⚠️ Invalid barElementGap (\(validated.global.barElementGap)), using default")
-      validated.global.barElementGap = 4
-    }
-    
-    if validated.global.barElementsBackgroundOpacity < 0 || validated.global.barElementsBackgroundOpacity > 100 {
-      print("⚠️ Invalid barElementsBackgroundOpacity (\(validated.global.barElementsBackgroundOpacity)), using default")
-      validated.global.barElementsBackgroundOpacity = 100
-    }
-
-    // Validate refresh intervals
-    validated.widgets.battery.refreshInterval = max(1, validated.widgets.battery.refreshInterval)
-    validated.widgets.weather.refreshInterval = max(60, validated.widgets.weather.refreshInterval)
-    validated.widgets.time.refreshInterval = max(0.1, validated.widgets.time.refreshInterval)
-    validated.widgets.cpu.refreshInterval = max(0.5, validated.widgets.cpu.refreshInterval)
-    validated.widgets.memory.refreshInterval = max(0.5, validated.widgets.memory.refreshInterval)
-    validated.widgets.gpu.refreshInterval = max(0.5, validated.widgets.gpu.refreshInterval)
-    validated.widgets.netstats.refreshInterval = max(
-      0.5, validated.widgets.netstats.refreshInterval)
-    validated.widgets.storage.refreshInterval = max(10, validated.widgets.storage.refreshInterval)
-    validated.widgets.bluetooth.refreshInterval = max(
-      1, validated.widgets.bluetooth.refreshInterval)
-    validated.widgets.bluetooth.batteryRefreshInterval = max(
-      15, validated.widgets.bluetooth.batteryRefreshInterval)
-
-    return validated
-  }
-
-  /// Provide human-readable description of decoding errors
-  private func describeDecodingError(_ error: DecodingError) -> String {
-    switch error {
-    case .typeMismatch(let type, let context):
-      return
-        "Type mismatch for \(type) at \(context.codingPath.map { $0.stringValue }.joined(separator: "."))"
-    case .valueNotFound(let type, let context):
-      return
-        "Missing required value of type \(type) at \(context.codingPath.map { $0.stringValue }.joined(separator: "."))"
-    case .keyNotFound(let key, let context):
-      return
-        "Missing required key '\(key.stringValue)' at \(context.codingPath.map { $0.stringValue }.joined(separator: "."))"
-    case .dataCorrupted(let context):
-      return
-        "Data corrupted at \(context.codingPath.map { $0.stringValue }.joined(separator: ".")): \(context.debugDescription)"
-    @unknown default:
-      return "Unknown decoding error"
-    }
-  }
-
-}
-
-extension SettingsManager {
-  fileprivate static func recoverSettingsByMergingDefaults(with data: Data) -> ABarSettings? {
-    guard
-      let saved = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-      let defaultData = try? JSONEncoder().encode(ABarSettings()),
-      let defaults = try? JSONSerialization.jsonObject(with: defaultData, options: [])
-        as? [String: Any]
-    else {
-      return nil
-    }
-
-    let merged = deepMerge(defaults: defaults, saved: saved)
-
-    guard JSONSerialization.isValidJSONObject(merged),
-      let mergedData = try? JSONSerialization.data(withJSONObject: merged, options: [])
-    else {
-      return nil
-    }
-
-    return try? JSONDecoder().decode(ABarSettings.self, from: mergedData)
-  }
-
-  fileprivate static func deepMerge(defaults: [String: Any], saved: [String: Any]) -> [String: Any]
-  {
-    var result = defaults
-    for (key, savedValue) in saved {
-      if let savedDict = savedValue as? [String: Any],
-        let defaultDict = defaults[key] as? [String: Any]
-      {
-        result[key] = deepMerge(defaults: defaultDict, saved: savedDict)
-      } else {
-        result[key] = savedValue
-      }
-    }
-    return result
   }
 }
 
 /// Root settings object
+///
+/// Every property carries its default here, and this is the only place a default is
+/// written: `SettingsCodec` fills whatever a config file is missing from an encoded
+/// `ABarSettings()`, so there is no hand-written decoder to drift away from these values.
 struct ABarSettings: Codable, Equatable {
+  var schemaVersion: Int = SettingsCodec.currentSchemaVersion
   var global: GlobalSettings = GlobalSettings()
   var theme: ThemeSettings = ThemeSettings()
   var widgets: WidgetSettings = WidgetSettings()
   var userWidgets: [UserWidgetDefinition] = []
   var profiles: [LayoutProfile] = []
   var activeProfileId: String? = nil
-
-  // Custom decoder to handle migration from old layout format
-  init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-
-    global = try container.decodeIfPresent(GlobalSettings.self, forKey: .global) ?? GlobalSettings()
-    theme = try container.decodeIfPresent(ThemeSettings.self, forKey: .theme) ?? ThemeSettings()
-    widgets =
-      try container.decodeIfPresent(WidgetSettings.self, forKey: .widgets) ?? WidgetSettings()
-    userWidgets =
-      try container.decodeIfPresent([UserWidgetDefinition].self, forKey: .userWidgets) ?? []
-    profiles =
-      try container.decodeIfPresent([LayoutProfile].self, forKey: .profiles) ?? []
-    activeProfileId = try container.decodeIfPresent(String.self, forKey: .activeProfileId)
-  }
-
-  init() {
-    // Default initializer
-  }
-
-  private enum CodingKeys: String, CodingKey {
-    case global, theme, widgets, userWidgets, profiles, activeProfileId
-  }
-
-  func encode(to encoder: Encoder) throws {
-    var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encode(global, forKey: .global)
-    try container.encode(theme, forKey: .theme)
-    try container.encode(widgets, forKey: .widgets)
-    try container.encode(userWidgets, forKey: .userWidgets)
-    try container.encode(profiles, forKey: .profiles)
-    try container.encodeIfPresent(activeProfileId, forKey: .activeProfileId)
-  }
 }
 
 /// Global application settings
@@ -474,43 +278,6 @@ struct GlobalSettings: Codable, Equatable {
   var enableNotifications: Bool = true
 
   var barElementGap: CGFloat = 4  // Gap between bar elements (widgets)
-
-  // Custom decoder to handle missing windowManager key for backward compatibility
-  init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    barEnabled = try container.decodeIfPresent(Bool.self, forKey: .barEnabled) ?? true
-    launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
-    barHeight = try container.decodeIfPresent(CGFloat.self, forKey: .barHeight) ?? 34
-    fontSize = try container.decodeIfPresent(CGFloat.self, forKey: .fontSize) ?? 11
-    fontName = try container.decodeIfPresent(String.self, forKey: .fontName) ?? ""
-    barHorizontalPadding = try container.decodeIfPresent(CGFloat.self, forKey: .barHorizontalPadding) ?? 4
-    barVerticalPadding = try container.decodeIfPresent(CGFloat.self, forKey: .barVerticalPadding) ?? 4
-    barDistanceFromEdges = try container.decodeIfPresent(CGFloat.self, forKey: .barDistanceFromEdges) ?? 0
-    barCornerRadius = try container.decodeIfPresent(CGFloat.self, forKey: .barCornerRadius) ?? 6
-    barOpacity = try container.decodeIfPresent(CGFloat.self, forKey: .barOpacity) ?? 90
-    barElementsCornerRadius = try container.decodeIfPresent(CGFloat.self, forKey: .barElementsCornerRadius) ?? 4
-    barElementsBackgroundOpacity = try container.decodeIfPresent(CGFloat.self, forKey: .barElementsBackgroundOpacity) ?? 100
-    showBorder = try container.decodeIfPresent(Bool.self, forKey: .showBorder) ?? true
-    showElementsBorder = try container.decodeIfPresent(Bool.self, forKey: .showElementsBorder) ?? true
-    noColorInDataWidgets = try container.decodeIfPresent(Bool.self, forKey: .noColorInDataWidgets) ?? false
-    barBackgroundBlur = try container.decodeIfPresent(Bool.self, forKey: .barBackgroundBlur) ?? false
-    windowManager = try container.decodeIfPresent(WindowManager.self, forKey: .windowManager) ?? .yabai
-    yabaiPath = try container.decodeIfPresent(String.self, forKey: .yabaiPath) ?? "/opt/homebrew/bin/yabai"
-    aerospacePath = try container.decodeIfPresent(String.self, forKey: .aerospacePath) ?? "/opt/homebrew/bin/aerospace"
-    grayscaleAppIcons = try container.decodeIfPresent(Bool.self, forKey: .grayscaleAppIcons) ?? false
-    enableNotifications = try container.decodeIfPresent(Bool.self, forKey: .enableNotifications) ?? true
-    barElementGap = try container.decodeIfPresent(CGFloat.self, forKey: .barElementGap) ?? 4
-  }
-
-  init() {}
-
-  private enum CodingKeys: String, CodingKey {
-    case barEnabled, launchAtLogin, barHeight, fontSize, fontName, barHorizontalPadding
-    case barVerticalPadding, barDistanceFromEdges, barCornerRadius, barElementsCornerRadius
-    case barOpacity, barElementsBackgroundOpacity, showElementsBorder
-    case showBorder, noColorInDataWidgets, barBackgroundBlur, windowManager, yabaiPath, aerospacePath
-    case grayscaleAppIcons, enableNotifications, barElementGap
-  }
 }
 
 /// Theme and appearance settings
@@ -575,38 +342,6 @@ struct WidgetSettings: Codable, Equatable {
   var diskActivity: DiskActivityWidgetSettings = DiskActivityWidgetSettings()
   var storage: StorageWidgetSettings = StorageWidgetSettings()
   var hackerNews: HackerNewsWidgetSettings = HackerNewsWidgetSettings()
-  
-  // Custom decoder to handle missing keys gracefully (for backwards compatibility)
-  init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    
-    spaces = (try? container.decode(SpacesWidgetSettings.self, forKey: .spaces)) ?? SpacesWidgetSettings()
-    process = (try? container.decode(ProcessWidgetSettings.self, forKey: .process)) ?? ProcessWidgetSettings()
-    battery = (try? container.decode(BatteryWidgetSettings.self, forKey: .battery)) ?? BatteryWidgetSettings()
-    weather = (try? container.decode(WeatherWidgetSettings.self, forKey: .weather)) ?? WeatherWidgetSettings()
-    time = (try? container.decode(TimeWidgetSettings.self, forKey: .time)) ?? TimeWidgetSettings()
-    date = (try? container.decode(DateWidgetSettings.self, forKey: .date)) ?? DateWidgetSettings()
-    wifi = (try? container.decode(WifiWidgetSettings.self, forKey: .wifi)) ?? WifiWidgetSettings()
-    bluetooth = (try? container.decode(BluetoothWidgetSettings.self, forKey: .bluetooth)) ?? BluetoothWidgetSettings()
-    sound = (try? container.decode(SoundWidgetSettings.self, forKey: .sound)) ?? SoundWidgetSettings()
-    mic = (try? container.decode(MicWidgetSettings.self, forKey: .mic)) ?? MicWidgetSettings()
-    keyboard = (try? container.decode(KeyboardWidgetSettings.self, forKey: .keyboard)) ?? KeyboardWidgetSettings()
-    github = (try? container.decode(GitHubWidgetSettings.self, forKey: .github)) ?? GitHubWidgetSettings()
-    cpu = (try? container.decode(CPUWidgetSettings.self, forKey: .cpu)) ?? CPUWidgetSettings()
-    memory = (try? container.decode(MemoryWidgetSettings.self, forKey: .memory)) ?? MemoryWidgetSettings()
-    gpu = (try? container.decode(GPUWidgetSettings.self, forKey: .gpu)) ?? GPUWidgetSettings()
-    netstats = (try? container.decode(NetstatsWidgetSettings.self, forKey: .netstats)) ?? NetstatsWidgetSettings()
-    diskActivity = (try? container.decode(DiskActivityWidgetSettings.self, forKey: .diskActivity)) ?? DiskActivityWidgetSettings()
-    storage = (try? container.decode(StorageWidgetSettings.self, forKey: .storage)) ?? StorageWidgetSettings()
-    hackerNews = (try? container.decode(HackerNewsWidgetSettings.self, forKey: .hackerNews)) ?? HackerNewsWidgetSettings()
-  }
-  
-  init() {}
-  
-  private enum CodingKeys: String, CodingKey {
-    case spaces, process, battery, weather, time, date, wifi, bluetooth, sound, mic, keyboard, github
-    case cpu, memory, gpu, netstats, diskActivity, storage, hackerNews
-  }
 }
 
 struct SpacesWidgetSettings: Codable, Equatable {
@@ -688,44 +423,6 @@ struct WifiWidgetSettings: Codable, Equatable {
   var maxNetworkNameLength: Int = 15
   var backgroundColor: ThemeColor = .red
   var showIcon: Bool = true
-
-  init() {}
-
-  /// Custom decoder for backward compatibility. The synthesized one requires every key
-  /// to be present — a default value is not a fallback — so adding a field would make
-  /// an older saved payload throw, and `WidgetSettings` would quietly swap in a blank
-  /// `WifiWidgetSettings()`, losing the settings the user had. Decoding each field
-  /// independently also drops removed keys (`toggleOnClick`) without complaint.
-  init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    let defaults = WifiWidgetSettings()
-
-    refreshInterval =
-      try container.decodeIfPresent(TimeInterval.self, forKey: .refreshInterval)
-      ?? defaults.refreshInterval
-    scanInterval =
-      try container.decodeIfPresent(TimeInterval.self, forKey: .scanInterval)
-      ?? defaults.scanInterval
-    hideWhenDisabled =
-      try container.decodeIfPresent(Bool.self, forKey: .hideWhenDisabled)
-      ?? defaults.hideWhenDisabled
-    networkDevice =
-      try container.decodeIfPresent(String.self, forKey: .networkDevice)
-      ?? defaults.networkDevice
-    hideNetworkName =
-      try container.decodeIfPresent(Bool.self, forKey: .hideNetworkName)
-      ?? defaults.hideNetworkName
-    showSignalStrength =
-      try container.decodeIfPresent(Bool.self, forKey: .showSignalStrength)
-      ?? defaults.showSignalStrength
-    maxNetworkNameLength =
-      try container.decodeIfPresent(Int.self, forKey: .maxNetworkNameLength)
-      ?? defaults.maxNetworkNameLength
-    backgroundColor =
-      try container.decodeIfPresent(ThemeColor.self, forKey: .backgroundColor)
-      ?? defaults.backgroundColor
-    showIcon = try container.decodeIfPresent(Bool.self, forKey: .showIcon) ?? defaults.showIcon
-  }
 }
 
 struct BluetoothWidgetSettings: Codable, Equatable {

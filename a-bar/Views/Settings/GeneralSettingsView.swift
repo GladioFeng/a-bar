@@ -1,29 +1,50 @@
 import AppKit
-import ServiceManagement
+
 import SwiftUI
 
 /// General settings view
 struct GeneralSettingsView: View, ABarSettingsBindable {
   @EnvironmentObject var settings: SettingsManager
 
-  @State private var launchAtLogin = false
-
-  private var globalSettings: GlobalSettings {
-    settings.draftSettings.global
-  }
+  @State private var launchAtLoginStatus: LaunchAtLogin.Status = .disabled
+  @State private var launchAtLoginError: String?
 
   var body: some View {
     Form {
       Section {
         VStack(alignment: .leading, spacing: 16) {
-          // Launch at Login
-          Toggle("Launch at login", isOn: $launchAtLogin)
-            .onChange(of: launchAtLogin) { newValue in
-              setLaunchAtLogin(newValue)
+          // Launch at Login. Applied immediately rather than on Save: a login item that
+          // only takes effect after pressing Save is surprising, and macOS can refuse the
+          // registration outright, which the user needs to hear about straight away.
+          VStack(alignment: .leading, spacing: 4) {
+            Toggle(
+              "Launch at login",
+              isOn: Binding(
+                get: { settings.settings.global.launchAtLogin },
+                set: { setLaunchAtLogin($0) }
+              )
+            )
+
+            if launchAtLoginStatus == .requiresApproval {
+              Text("macOS needs you to approve a-bar before it can start at login.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+              Button("Open Login Items…") {
+                LaunchAtLogin.openSystemSettings()
+              }
+              .buttonStyle(.link)
+              .font(.caption)
             }
-            .onAppear {
-              launchAtLogin = getLaunchAtLogin()
+
+            if let launchAtLoginError = launchAtLoginError {
+              Text(launchAtLoginError)
+                .font(.caption)
+                .foregroundColor(.red)
             }
+          }
+          .onAppear {
+            launchAtLoginStatus = LaunchAtLogin.status
+          }
 
           // Window Manager
           VStack(alignment: .leading, spacing: 4) {
@@ -71,36 +92,15 @@ struct GeneralSettingsView: View, ABarSettingsBindable {
   }
 
   private func setLaunchAtLogin(_ enabled: Bool) {
-    if #available(macOS 13.0, *) {
-      do {
-        if enabled {
-          try SMAppService.mainApp.register()
-        } else {
-          try SMAppService.mainApp.unregister()
-        }
-      } catch {
-        print("Failed to update launch at login: \(error)")
-      }
-    } else {
-      // Fallback for older macOS versions
-      let identifier = Bundle.main.bundleIdentifier ?? "com.a-bar"
-      if enabled {
-        _ = ShellExecutor.runSync(
-          "osascript -e 'tell application \"System Events\" to make login item at end with properties {path:\"/Applications/a-bar.app\", hidden:true}'"
-        )
-      } else {
-        _ = ShellExecutor.runSync(
-          "osascript -e 'tell application \"System Events\" to delete login item \"\(identifier)\"'"
-        )
-      }
+    do {
+      try LaunchAtLogin.setEnabled(enabled)
+      launchAtLoginError = nil
+      settings.update { $0.global.launchAtLogin = enabled }
+    } catch {
+      // Leave the setting alone, so the toggle snaps back to what macOS actually did.
+      launchAtLoginError = "macOS refused to change the login item: \(error.localizedDescription)"
     }
-  }
 
-  private func getLaunchAtLogin() -> Bool {
-    if #available(macOS 13.0, *) {
-      return SMAppService.mainApp.status == .enabled
-    } else {
-      return false
-    }
+    launchAtLoginStatus = LaunchAtLogin.status
   }
 }

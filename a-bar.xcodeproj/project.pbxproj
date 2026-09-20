@@ -25,6 +25,9 @@
 		A1000010 /* YabaiTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000010 /* YabaiTypes.swift */; };
 		A1000011 /* WidgetTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000011 /* WidgetTypes.swift */; };
 		A1000012 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000012 /* Settings.swift */; };
+		A1000027 /* LaunchAtLogin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000027 /* LaunchAtLogin.swift */; };
+		A1000026 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000026 /* SettingsStore.swift */; };
+		A1000025 /* SettingsCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000025 /* SettingsCodec.swift */; };
 		A1000020 /* YabaiService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000020 /* YabaiService.swift */; };
 		A1000022 /* SystemInfoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000022 /* SystemInfoService.swift */; };
 		A1000023 /* BluetoothService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000023 /* BluetoothService.swift */; };
@@ -64,6 +67,18 @@
 		A1000085 /* XBarParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000085 /* XBarParser.swift */; };
 		A1000090 /* sfsymbols.txt in Resources */ = {isa = PBXBuildFile; fileRef = E1000012 /* sfsymbols.txt */; };
 		E1000014 /* a-bar.sdef in Resources */ = {isa = PBXBuildFile; fileRef = E1000013 /* a-bar.sdef */; };
+		A1000200 /* SettingsFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000200 /* SettingsFixtures.swift */; };
+		A1000201 /* SettingsCodecTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000201 /* SettingsCodecTests.swift */; };
+		A1000202 /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000202 /* SettingsStoreTests.swift */; };
+		A1000203 /* SettingsManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000203 /* SettingsManagerTests.swift */; };
+		A1000204 /* ProfileNormalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000204 /* ProfileNormalizationTests.swift */; };
+		A1000210 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000012 /* Settings.swift */; };
+		A1000211 /* SettingsCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000025 /* SettingsCodec.swift */; };
+		A1000212 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000026 /* SettingsStore.swift */; };
+		A1000213 /* Profile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F5602492F338BF200BBEA53 /* Profile.swift */; };
+		A1000214 /* WidgetTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000011 /* WidgetTypes.swift */; };
+		A1000215 /* AerospaceTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2000001 /* AerospaceTypes.swift */; };
+		A1000216 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000082 /* Theme.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -85,6 +100,9 @@
 		B1000010 /* YabaiTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YabaiTypes.swift; sourceTree = "<group>"; };
 		B1000011 /* WidgetTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetTypes.swift; sourceTree = "<group>"; };
 		B1000012 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
+		B1000027 /* LaunchAtLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLogin.swift; sourceTree = "<group>"; };
+		B1000026 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
+		B1000025 /* SettingsCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsCodec.swift; sourceTree = "<group>"; };
 		B1000020 /* YabaiService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YabaiService.swift; sourceTree = "<group>"; };
 		B1000022 /* SystemInfoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemInfoService.swift; sourceTree = "<group>"; };
 		B1000023 /* BluetoothService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothService.swift; sourceTree = "<group>"; };
@@ -127,10 +145,23 @@
 		E1000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		E1000012 /* sfsymbols.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = sfsymbols.txt; sourceTree = "<group>"; };
 		E1000013 /* a-bar.sdef */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = "a-bar.sdef"; sourceTree = "<group>"; };
+		B1000200 /* SettingsFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsFixtures.swift; sourceTree = "<group>"; };
+		B1000201 /* SettingsCodecTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsCodecTests.swift; sourceTree = "<group>"; };
+		B1000202 /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
+		B1000203 /* SettingsManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsManagerTests.swift; sourceTree = "<group>"; };
+		B1000204 /* ProfileNormalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileNormalizationTests.swift; sourceTree = "<group>"; };
+		D1000002 /* a-barTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "a-barTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		F1000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F1000002 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -144,6 +175,7 @@
 			isa = PBXGroup;
 			children = (
 				G1000002 /* a-bar */,
+				G1000200 /* a-barTests */,
 				G1000100 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -177,6 +209,8 @@
 				B1000010 /* YabaiTypes.swift */,
 				B1000011 /* WidgetTypes.swift */,
 				B1000012 /* Settings.swift */,
+				B1000025 /* SettingsCodec.swift */,
+				B1000026 /* SettingsStore.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -296,6 +330,7 @@
 				B1000080 /* ShellExecutor.swift */,
 				B1000081 /* AppIconProvider.swift */,
 				B1000082 /* Theme.swift */,
+				B1000027 /* LaunchAtLogin.swift */,
 				B1000083 /* Extensions.swift */,
 				B1000086 /* WidgetPopover.swift */,
 			);
@@ -314,8 +349,21 @@
 			isa = PBXGroup;
 			children = (
 				D1000001 /* a-bar.app */,
+				D1000002 /* a-barTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		G1000200 /* a-barTests */ = {
+			isa = PBXGroup;
+			children = (
+				B1000200 /* SettingsFixtures.swift */,
+				B1000201 /* SettingsCodecTests.swift */,
+				B1000202 /* SettingsStoreTests.swift */,
+				B1000203 /* SettingsManagerTests.swift */,
+				B1000204 /* ProfileNormalizationTests.swift */,
+			);
+			path = "a-barTests";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -337,6 +385,22 @@
 			productName = "a-bar";
 			productReference = D1000001 /* a-bar.app */;
 			productType = "com.apple.product-type.application";
+		};
+		T1000002 /* a-barTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = X1000002 /* Build configuration list for PBXNativeTarget "a-barTests" */;
+			buildPhases = (
+				S1000002 /* Sources */,
+				F1000002 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "a-barTests";
+			productName = "a-barTests";
+			productReference = D1000002 /* a-barTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -367,6 +431,7 @@
 			projectRoot = "";
 			targets = (
 				T1000001 /* a-bar */,
+				T1000002 /* a-barTests */,
 			);
 		};
 /* End PBXProject section */
@@ -397,6 +462,9 @@
 				A1000011 /* WidgetTypes.swift in Sources */,
 				0F3AA90F2F392ED300554810 /* HackerNewsWidget.swift in Sources */,
 				A1000012 /* Settings.swift in Sources */,
+				A1000027 /* LaunchAtLogin.swift in Sources */,
+				A1000026 /* SettingsStore.swift in Sources */,
+				A1000025 /* SettingsCodec.swift in Sources */,
 				0FEC2C322F2E59FE00CDA90B /* StorageWidget.swift in Sources */,
 				A1000020 /* YabaiService.swift in Sources */,
 				A1000022 /* SystemInfoService.swift in Sources */,
@@ -443,6 +511,25 @@
 				C1000005 /* AerospaceOpenedAppsView.swift in Sources */,
 				C1000006 /* AerospaceProcessWidget.swift in Sources */,
 				A1000085 /* XBarParser.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		S1000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000200 /* SettingsFixtures.swift in Sources */,
+				A1000201 /* SettingsCodecTests.swift in Sources */,
+				A1000202 /* SettingsStoreTests.swift in Sources */,
+				A1000203 /* SettingsManagerTests.swift in Sources */,
+				A1000204 /* ProfileNormalizationTests.swift in Sources */,
+				A1000210 /* Settings.swift in Sources */,
+				A1000211 /* SettingsCodec.swift in Sources */,
+				A1000212 /* SettingsStore.swift in Sources */,
+				A1000213 /* Profile.swift in Sources */,
+				A1000214 /* WidgetTypes.swift in Sources */,
+				A1000215 /* AerospaceTypes.swift in Sources */,
+				A1000216 /* Theme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -631,6 +718,42 @@
 			};
 			name = Release;
 		};
+		Y1000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.jeantinland.a-barTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		Y1000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.jeantinland.a-barTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -648,6 +771,15 @@
 			buildConfigurations = (
 				Y1000001 /* Debug */,
 				Y1000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		X1000002 /* Build configuration list for PBXNativeTarget "a-barTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				Y1000003 /* Debug */,
+				Y1000004 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

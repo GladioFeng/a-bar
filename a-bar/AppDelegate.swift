@@ -1,6 +1,5 @@
 import AppKit
 import Combine
-import ServiceManagement
 import SwiftUI
 
 /// Key for identifying a bar window by display index and position
@@ -20,6 +19,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// Settings window controller
   private var settingsWindowController: NSWindowController?
+
+  /// Last value applied to the login item, so unrelated settings changes cannot thrash
+  /// SMAppService - or unregister what the user just enabled.
+  private var appliedLaunchAtLogin: Bool?
 
   /// Settings manager
   let settingsManager = SettingsManager.shared
@@ -50,6 +53,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     // Terminate any existing a-bar instances to prevent multiple processes
     terminateExistingInstances()
+
+    // Bring up the profile list before anything reads it
+    ProfileManager.bootstrap()
+
+    // Adopt whatever macOS says about the login item before watching for changes
+    reconcileLaunchAtLogin()
     
     // Setup menu bar status item
     setupStatusItem()
@@ -95,6 +104,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationWillTerminate(_ notification: Notification) {
+    // Writes are debounced, so make sure the last change reaches disk
+    settingsManager.flush()
+
     barWindows.values.forEach { $0.close() }
     yabaiService.stop()
     aerospaceService.stop()
@@ -295,7 +307,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     restartWindowManagerServices(settings.global.windowManager)
 
     // Update launch at login
-    updateLaunchAtLogin(settings.global.launchAtLogin)
+    applyLaunchAtLogin(settings.global.launchAtLogin)
   }
 
   /// Restart window manager services based on the selected WM
@@ -310,23 +322,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  // Update launch at login status using ServiceManagement framework (macOS 13+)
-  private func updateLaunchAtLogin(_ enabled: Bool) {
-    if #available(macOS 13.0, *) {
-      do {
-        if enabled {
-          try SMAppService.mainApp.register()
-        } else {
-          try SMAppService.mainApp.unregister()
-        }
-      } catch {
-        print("Failed to update launch at login: \(error)")
-      }
+  /// macOS owns the login item: the user can remove it in System Settings without the app
+  /// hearing about it, so adopt what it reports instead of forcing the stored value back on.
+  private func reconcileLaunchAtLogin() {
+    let registered = LaunchAtLogin.isEnabled
+    appliedLaunchAtLogin = registered
+
+    if settingsManager.settings.global.launchAtLogin != registered {
+      settingsManager.update { $0.global.launchAtLogin = registered }
+    }
+  }
+
+  /// Apply the setting only when it actually changed. Reacting to every settings change is
+  /// what used to unregister the login item the moment any other setting was saved.
+  private func applyLaunchAtLogin(_ enabled: Bool) {
+    guard appliedLaunchAtLogin != enabled else { return }
+    appliedLaunchAtLogin = enabled
+
+    do {
+      try LaunchAtLogin.setEnabled(enabled)
+    } catch {
+      print("⚠️ a-bar: failed to update launch at login: \(error.localizedDescription)")
+      appliedLaunchAtLogin = nil
     }
   }
 
   // Open the preferences window, creating it if it doesn't exist
   @objc private func openPreferences() {
+    // Pick up anything changed since the window was last open (menu bar toggle, AppleScript,
+    // a profile switch) without discarding edits already in progress.
+    settingsManager.rebaseDraftIfClean()
+
     if settingsWindowController == nil {
       // Create the settings view and embed it in a hosting controller
       let settingsView = SettingsView()
@@ -368,7 +394,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   // Toggle bar visibility and update menu item state accordingly
   @objc private func toggleBarVisibility() {
-    settingsManager.settings.global.barEnabled.toggle()
+    settingsManager.update { $0.global.barEnabled.toggle() }
 
     // Update menu item state
     if let menu = statusItem?.menu,

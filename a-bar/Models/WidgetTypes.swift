@@ -109,33 +109,6 @@ enum WidgetIdentifier: String, Codable, CaseIterable, Identifiable {
     }
   }
 
-  /// Default position (0 = leftmost)
-  var defaultPosition: WidgetPosition {
-    switch self {
-    case .spaces: return .left(0)
-    case .process: return .left(2)
-    case .aerospaceSpaces: return .left(0)
-    case .aerospaceProcess: return .left(2)
-    case .userWidget: return .center(0)
-    case .hackerNews: return .center(1)
-    case .weather: return .right(0)
-    case .netstats: return .right(1)
-    case .diskActivity: return .right(2)
-    case .cpu: return .right(3)
-    case .memory: return .right(4)
-    case .gpu: return .right(5)
-    case .storage: return .right(6)
-    case .github: return .right(7)
-    case .wifi: return .right(8)
-    case .bluetooth: return .right(9)
-    case .keyboard: return .right(10)
-    case .mic: return .right(11)
-    case .sound: return .right(12)
-    case .battery: return .right(13)
-    case .date: return .right(14)
-    case .time: return .right(15)
-    }
-  }
 }
 
 /// Categories for grouping widgets
@@ -336,147 +309,6 @@ struct MultiDisplayLayout: Codable, Equatable {
   }
 }
 
-/// Position of a widget in the bar (legacy - kept for migration)
-enum WidgetPosition: Codable, Equatable {
-  case left(Int)
-  case center(Int)
-  case right(Int)
-
-  var section: WidgetSection {
-    switch self {
-    case .left: return .left
-    case .center: return .center
-    case .right: return .right
-    }
-  }
-
-  var order: Int {
-    switch self {
-    case .left(let order), .center(let order), .right(let order):
-      return order
-    }
-  }
-}
-
-/// Configuration for a single widget instance (legacy - kept for migration)
-struct WidgetConfiguration: Codable, Identifiable, Equatable {
-  let id: UUID
-  var identifier: WidgetIdentifier
-  var enabled: Bool
-  var position: WidgetPosition
-  var refreshInterval: TimeInterval
-  var showOnDisplays: [Int]?
-  var showIcon: Bool
-  var userWidgetIndex: Int?
-
-  init(
-    id: UUID = UUID(),
-    identifier: WidgetIdentifier,
-    enabled: Bool = true,
-    position: WidgetPosition? = nil,
-    refreshInterval: TimeInterval = 10,
-    showOnDisplays: [Int]? = nil,
-    showIcon: Bool = true,
-    userWidgetIndex: Int? = nil
-  ) {
-    self.id = id
-    self.identifier = identifier
-    self.enabled = enabled
-    self.position = position ?? identifier.defaultPosition
-    self.refreshInterval = refreshInterval
-    self.showOnDisplays = showOnDisplays
-    self.showIcon = showIcon
-    self.userWidgetIndex = userWidgetIndex
-  }
-
-  /// Convert to WidgetInstance
-  func toWidgetInstance() -> WidgetInstance {
-    WidgetInstance(
-      id: id,
-      identifier: identifier,
-      enabled: enabled,
-      showIcon: showIcon,
-      userWidgetIndex: userWidgetIndex
-    )
-  }
-}
-
-/// Layout configuration for the bar (legacy - kept for migration)
-struct BarLayout: Codable, Equatable {
-  var widgets: [WidgetConfiguration]
-
-  static var defaultLayout: BarLayout {
-    BarLayout(widgets: [
-      WidgetConfiguration(identifier: .spaces),
-      WidgetConfiguration(identifier: .process),
-      WidgetConfiguration(identifier: .weather),
-      WidgetConfiguration(identifier: .netstats),
-      WidgetConfiguration(identifier: .cpu),
-      WidgetConfiguration(identifier: .memory),
-      WidgetConfiguration(identifier: .gpu, enabled: false),
-      WidgetConfiguration(identifier: .github, enabled: false),
-      WidgetConfiguration(identifier: .wifi),
-      WidgetConfiguration(identifier: .keyboard),
-      WidgetConfiguration(identifier: .mic),
-      WidgetConfiguration(identifier: .sound),
-      WidgetConfiguration(identifier: .battery),
-      WidgetConfiguration(identifier: .date),
-      WidgetConfiguration(identifier: .time),
-    ])
-  }
-
-  /// Get widgets for a specific section
-  func widgets(for section: WidgetSection) -> [WidgetConfiguration] {
-    widgets
-      .filter { $0.position.section == section && $0.enabled }
-      .sorted { $0.position.order < $1.position.order }
-  }
-
-  /// Get widget configuration by identifier
-  func widget(_ identifier: WidgetIdentifier) -> WidgetConfiguration? {
-    widgets.first { $0.identifier == identifier }
-  }
-
-  /// Update widget configuration
-  mutating func updateWidget(_ configuration: WidgetConfiguration) {
-    if let index = widgets.firstIndex(where: { $0.id == configuration.id }) {
-      widgets[index] = configuration
-    }
-  }
-
-  /// Move widget to new position
-  mutating func moveWidget(_ id: UUID, to position: WidgetPosition) {
-    guard let index = widgets.firstIndex(where: { $0.id == id }) else { return }
-    widgets[index].position = position
-
-    // Reorder other widgets in the same section
-    let section = position.section
-    let sectionWidgets = widgets.enumerated()
-      .filter { $0.element.position.section == section }
-      .sorted { $0.element.position.order < $1.element.position.order }
-
-    for (newOrder, (originalIndex, _)) in sectionWidgets.enumerated() {
-      switch widgets[originalIndex].position {
-      case .left:
-        widgets[originalIndex].position = .left(newOrder)
-      case .center:
-        widgets[originalIndex].position = .center(newOrder)
-      case .right:
-        widgets[originalIndex].position = .right(newOrder)
-      }
-    }
-  }
-
-  /// Convert legacy layout to SingleBarLayout
-  func toSingleBarLayout() -> SingleBarLayout {
-    SingleBarLayout(
-      left: widgets(for: .left).map { $0.toWidgetInstance() },
-      center: widgets(for: .center).map { $0.toWidgetInstance() },
-      right: widgets(for: .right).map { $0.toWidgetInstance() }
-    )
-  }
-}
-
 /// Definition for a custom user widget (xbar-compatible)
 ///
 /// Scripts write to stdout using the xbar plugin format:
@@ -516,24 +348,6 @@ struct UserWidgetDefinition: Codable, Identifiable, Equatable {
     self.cycleDuration = max(Self.minimumCycleDuration, cycleDuration)
   }
 
-  // Custom decoder for backward compatibility (silently ignores removed fields)
-  init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    id = try container.decode(UUID.self, forKey: .id)
-    name = try container.decode(String.self, forKey: .name)
-    command = try container.decode(String.self, forKey: .command)
-    refreshInterval = max(
-      Self.minimumRefreshInterval,
-      try container.decode(TimeInterval.self, forKey: .refreshInterval)
-    )
-    isActive = try container.decode(Bool.self, forKey: .isActive)
-    backgroundColor = try container.decodeIfPresent(String.self, forKey: .backgroundColor)
-    hideWhenEmpty = try container.decodeIfPresent(Bool.self, forKey: .hideWhenEmpty) ?? false
-    cycleDuration = max(
-      Self.minimumCycleDuration,
-      try container.decodeIfPresent(TimeInterval.self, forKey: .cycleDuration) ?? 4
-    )
-  }
 }
 
 /// A data point for graph widgets

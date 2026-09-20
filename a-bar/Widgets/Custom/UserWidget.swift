@@ -427,8 +427,7 @@ class UserWidgetManager: ObservableObject {
   private let settingsManager = SettingsManager.shared
 
   var widgets: [UserWidgetDefinition] {
-    get { settingsManager.settings.userWidgets }
-    set { settingsManager.settings.userWidgets = newValue }
+    settingsManager.settings.userWidgets
   }
 
   private init() {}
@@ -443,11 +442,11 @@ class UserWidgetManager: ObservableObject {
     if isNameTaken(config.name) {
       throw UserWidgetError.duplicateName(config.name)
     }
-    settingsManager.settings.userWidgets.append(config)
+    settingsManager.update { $0.userWidgets.append(config) }
   }
 
   func removeWidget(id: UUID) {
-    settingsManager.settings.userWidgets.removeAll { $0.id == id }
+    settingsManager.update { $0.userWidgets.removeAll { $0.id == id } }
   }
 
   func updateWidget(_ config: UserWidgetDefinition) throws {
@@ -455,13 +454,23 @@ class UserWidgetManager: ObservableObject {
       throw UserWidgetError.duplicateName(config.name)
     }
 
-    if let index = settingsManager.settings.userWidgets.firstIndex(where: { $0.id == config.id }) {
-      settingsManager.settings.userWidgets[index] = config
+    settingsManager.update { settings in
+      if let index = settings.userWidgets.firstIndex(where: { $0.id == config.id }) {
+        settings.userWidgets[index] = config
+      }
     }
   }
 
   func moveWidget(from source: IndexSet, to destination: Int) {
-    settingsManager.settings.userWidgets.move(fromOffsets: source, toOffset: destination)
+    settingsManager.update { settings in
+      // Offsets are checked against the copy being mutated: `update` runs this against both
+      // the running settings and the Preferences draft, which can hold different lists.
+      guard source.allSatisfy({ settings.userWidgets.indices.contains($0) }),
+        (0...settings.userWidgets.count).contains(destination)
+      else { return }
+
+      settings.userWidgets.move(fromOffsets: source, toOffset: destination)
+    }
   }
 
   @discardableResult
@@ -479,45 +488,41 @@ class UserWidgetManager: ObservableObject {
     return true
   }
 
+  /// Returns the state the widget ended up in.
   func toggleWidget(named name: String) -> Result<Bool, UserWidgetError> {
-    guard
-      let index = settingsManager.settings.userWidgets.firstIndex(where: { $0.name == name })
-    else {
-      return .failure(.widgetNotFound(name))
-    }
-
-    settingsManager.settings.userWidgets[index].isActive.toggle()
-    let newState = settingsManager.settings.userWidgets[index].isActive
-    return .success(newState)
+    setActive(named: name) { !$0 }.map { $0.isActive }
   }
 
+  /// Returns whether this call actually hid the widget.
   func hideWidget(named name: String) -> Result<Bool, UserWidgetError> {
-    guard
-      let index = settingsManager.settings.userWidgets.firstIndex(where: { $0.name == name })
-    else {
-      return .failure(.widgetNotFound(name))
-    }
-
-    if settingsManager.settings.userWidgets[index].isActive {
-      settingsManager.settings.userWidgets[index].isActive = false
-      return .success(true)
-    } else {
-      return .success(false)
-    }
+    setActive(named: name) { _ in false }.map { $0.didChange }
   }
 
+  /// Returns whether this call actually showed the widget.
   func showWidget(named name: String) -> Result<Bool, UserWidgetError> {
-    guard
-      let index = settingsManager.settings.userWidgets.firstIndex(where: { $0.name == name })
-    else {
+    setActive(named: name) { _ in true }.map { $0.didChange }
+  }
+
+  /// Set a widget's visibility and persist it, so an AppleScript toggle survives a restart
+  /// and is not reverted by the next save from the Preferences window.
+  private func setActive(named name: String, to newValue: (Bool) -> Bool)
+    -> Result<(isActive: Bool, didChange: Bool), UserWidgetError>
+  {
+    guard let widget = widgets.first(where: { $0.name == name }) else {
       return .failure(.widgetNotFound(name))
     }
 
-    if !settingsManager.settings.userWidgets[index].isActive {
-      settingsManager.settings.userWidgets[index].isActive = true
-      return .success(true)
-    } else {
-      return .success(false)
+    let wasActive = widget.isActive
+    let isActive = newValue(wasActive)
+
+    if isActive != wasActive {
+      settingsManager.update { settings in
+        if let index = settings.userWidgets.firstIndex(where: { $0.id == widget.id }) {
+          settings.userWidgets[index].isActive = isActive
+        }
+      }
     }
+
+    return .success((isActive: isActive, didChange: isActive != wasActive))
   }
 }

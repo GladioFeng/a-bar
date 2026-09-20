@@ -33,9 +33,11 @@ struct LayoutProfile: Codable, Identifiable, Equatable {
 ///
 /// Architecture:
 /// - `activeProfileId`: The globally active profile that the bar displays
-/// - Profiles are stored in the main settings file (.a-barrc)
+/// - Profiles live in `ABarSettings.profiles`, written through `SettingsManager.update`;
+///   this type keeps no store of its own
 /// - Settings view can edit any profile without affecting the active one
-/// - Changes are only applied when explicitly saved
+/// - Profile changes (create, rename, delete, switch) persist immediately, unlike the rest
+///   of the settings, which wait for an explicit Save
 class ProfileManager: ObservableObject {
   static let shared = ProfileManager()
 
@@ -50,58 +52,25 @@ class ProfileManager: ObservableObject {
     profiles.first { $0.id == activeProfileId }
   }
 
-  private let profilesKey = "abar-profiles"
-  private let activeProfileKey = "abar-active-profile"
-  private let userDefaults = UserDefaults.standard
+  /// Bring the profile list up before anything reads it. `SettingsManager` deliberately
+  /// does not touch this type during its own initialization, so there is no cycle between
+  /// the two singletons - this just makes the ordering explicit at launch.
+  static func bootstrap() {
+    _ = ProfileManager.shared
+  }
 
   private init() {
-    // Load profiles from settings
+    // `SettingsCodec.normalize` guarantees the invariants this relies on: at least one
+    // profile, unique ids, exactly one default, and an active id that resolves.
     let settings = SettingsManager.shared.settings
-    var loadedProfiles: [LayoutProfile]
+    let loaded = settings.profiles.isEmpty ? [LayoutProfile.defaultProfile] : settings.profiles
 
-    if !settings.profiles.isEmpty {
-      loadedProfiles = settings.profiles
-    } else if let data = userDefaults.data(forKey: profilesKey),
-      let decoded = try? JSONDecoder().decode([LayoutProfile].self, from: data),
-      !decoded.isEmpty
-    {
-      loadedProfiles = decoded
-    } else {
-      // Initialize with default profile
-      let defaultProfile = LayoutProfile(
-        name: "Default",
-        multiDisplayLayout: .defaultLayout,
-        isDefault: true
-      )
-      loadedProfiles = [defaultProfile]
-    }
-
-    // Ensure there's always a default profile
-    if !loadedProfiles.contains(where: { $0.isDefault }) {
-      let defaultProfile = LayoutProfile(
-        name: "Default",
-        multiDisplayLayout: loadedProfiles.first?.multiDisplayLayout ?? .defaultLayout,
-        isDefault: true
-      )
-      loadedProfiles.insert(defaultProfile, at: 0)
-    }
-
-    self.profiles = loadedProfiles
-
-    // Load active profile ID
-    if let activeIdString = settings.activeProfileId,
-      let activeId = UUID(uuidString: activeIdString),
-      loadedProfiles.contains(where: { $0.id == activeId })
-    {
-      self.activeProfileId = activeId
-    } else if let activeIdString = userDefaults.string(forKey: activeProfileKey),
-      let activeId = UUID(uuidString: activeIdString),
-      loadedProfiles.contains(where: { $0.id == activeId })
-    {
-      self.activeProfileId = activeId
-    } else {
-      self.activeProfileId = loadedProfiles.first?.id ?? UUID()
-    }
+    self.profiles = loaded
+    self.activeProfileId =
+      settings.activeProfileId
+      .flatMap(UUID.init(uuidString:))
+      .flatMap { id in loaded.contains { $0.id == id } ? id : nil }
+      ?? loaded[0].id
   }
 
   /// Switch to a profile by ID - applies immediately to the bar
@@ -206,17 +175,12 @@ class ProfileManager: ObservableObject {
     profiles.first { $0.id == id }
   }
 
-  /// Persist profiles and active profile ID to settings file
+  /// Persist profiles through the one writer that owns the config file.
   private func persistState() {
-    SettingsManager.shared.settings.profiles = profiles
-    SettingsManager.shared.settings.activeProfileId = activeProfileId.uuidString
-    SettingsManager.shared.saveSettingsNow(SettingsManager.shared.settings)
-
-    // Backup to UserDefaults
-    if let encoded = try? JSONEncoder().encode(profiles) {
-      userDefaults.set(encoded, forKey: profilesKey)
+    SettingsManager.shared.update { settings in
+      settings.profiles = self.profiles
+      settings.activeProfileId = self.activeProfileId.uuidString
     }
-    userDefaults.set(activeProfileId.uuidString, forKey: activeProfileKey)
   }
 
   /// Get list of profile names
