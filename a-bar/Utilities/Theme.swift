@@ -431,7 +431,12 @@ extension Color {
     let r: UInt64
     let g: UInt64
     let b: UInt64
-    switch hex.count {
+    // `scanHexInt64` stops at the first non-hex character and still reports success, so the
+    // length alone does not mean the string was readable. Without this an 8-character typo fell
+    // into the ARGB case, scanned as 0, and produced a fully transparent colour - the element
+    // vanished from the bar instead of falling back to something the user could see and correct.
+    let isReadable = !hex.isEmpty && hex.allSatisfy(\.isHexDigit)
+    switch isReadable ? hex.count : 0 {
     case 3:  // RGB (12-bit)
       (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
     case 6:  // RGB (24-bit)
@@ -453,9 +458,12 @@ extension Color {
 
   var hexString: String {
     guard let components = NSColor(self).cgColor.components else { return "#000000" }
-    let r = Int(components[0] * 255)
-    let g = Int(components[1] * 255)
-    let b = Int(components[2] * 255)
+    // Rounding, not truncating: 0x22 bridges to 33.999... and `Int()` would floor it to 0x21, so
+    // a colour lost a step per channel every time the picker wrote it back. Repeated saves
+    // walked a theme override steadily darker.
+    let r = Int((components[0] * 255).rounded())
+    let g = Int((components[1] * 255).rounded())
+    let b = Int((components[2] * 255).rounded())
     return String(format: "#%02X%02X%02X", r, g, b)
   }
 

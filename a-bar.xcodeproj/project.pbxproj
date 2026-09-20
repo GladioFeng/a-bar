@@ -83,6 +83,12 @@
 		A1000214 /* WidgetTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000011 /* WidgetTypes.swift */; };
 		A1000215 /* AerospaceTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2000001 /* AerospaceTypes.swift */; };
 		A1000216 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000082 /* Theme.swift */; };
+		A1000217 /* YabaiTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000010 /* YabaiTypes.swift */; };
+		A1000218 /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000083 /* Extensions.swift */; };
+		A1000219 /* ShellExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000080 /* ShellExecutor.swift */; };
+		A1000304 /* YabaiStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000304 /* YabaiStateTests.swift */; };
+		A1000305 /* FormattingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000305 /* FormattingTests.swift */; };
+		A1000306 /* ShellExecutorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000306 /* ShellExecutorTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -158,6 +164,9 @@
 		B1000301 /* GraphHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GraphHistoryTests.swift"; sourceTree = "<group>"; };
 		B1000302 /* AerospaceDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AerospaceDecodingTests.swift"; sourceTree = "<group>"; };
 		B1000303 /* ThemeColorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ThemeColorTests.swift"; sourceTree = "<group>"; };
+		B1000304 /* YabaiStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "YabaiStateTests.swift"; sourceTree = "<group>"; };
+		B1000305 /* FormattingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FormattingTests.swift"; sourceTree = "<group>"; };
+		B1000306 /* ShellExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ShellExecutorTests.swift"; sourceTree = "<group>"; };
 		D1000002 /* a-barTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "a-barTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -374,6 +383,9 @@
 				B1000301 /* GraphHistoryTests.swift */,
 				B1000302 /* AerospaceDecodingTests.swift */,
 				B1000303 /* ThemeColorTests.swift */,
+				B1000304 /* YabaiStateTests.swift */,
+				B1000305 /* FormattingTests.swift */,
+				B1000306 /* ShellExecutorTests.swift */,
 			);
 			path = "a-barTests";
 			sourceTree = "<group>";
@@ -539,6 +551,9 @@
 				A1000301 /* GraphHistoryTests.swift in Sources */,
 				A1000302 /* AerospaceDecodingTests.swift in Sources */,
 				A1000303 /* ThemeColorTests.swift in Sources */,
+				A1000304 /* YabaiStateTests.swift in Sources */,
+				A1000305 /* FormattingTests.swift in Sources */,
+				A1000306 /* ShellExecutorTests.swift in Sources */,
 				A1000210 /* Settings.swift in Sources */,
 				A1000211 /* SettingsCodec.swift in Sources */,
 				A1000212 /* SettingsStore.swift in Sources */,
@@ -546,6 +561,9 @@
 				A1000214 /* WidgetTypes.swift in Sources */,
 				A1000215 /* AerospaceTypes.swift in Sources */,
 				A1000216 /* Theme.swift in Sources */,
+				A1000217 /* YabaiTypes.swift in Sources */,
+				A1000218 /* Extensions.swift in Sources */,
+				A1000219 /* ShellExecutor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

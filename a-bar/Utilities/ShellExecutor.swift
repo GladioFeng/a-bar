@@ -47,9 +47,30 @@ enum ShellExecutor {
         return timer
     }
 
-    private static func readString(from pipe: Pipe) -> String {
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
+    /// Drains a pipe on its own queue, starting immediately.
+    ///
+    /// A pipe holds about 64KB. Waiting for the process to exit before reading deadlocks any
+    /// script that writes more than that: the child blocks on write, the parent blocks on
+    /// `waitUntilExit()`, and only the timeout watchdog breaks the tie - after which the output
+    /// is silently truncated to the buffer size. Reading concurrently is what makes a script
+    /// with a lot to say work at all.
+    private final class PipeDrain {
+        private let group = DispatchGroup()
+        private var data = Data()
+
+        init(_ pipe: Pipe) {
+            group.enter()
+            DispatchQueue.global(qos: .utility).async { [self] in
+                data = pipe.fileHandleForReading.readDataToEndOfFile()
+                group.leave()
+            }
+        }
+
+        /// Blocks until the write end closes, which happens when the child exits.
+        func string() -> String {
+            group.wait()
+            return String(data: data, encoding: .utf8) ?? ""
+        }
     }
 
     /// Execute a shell command and return the output.
@@ -71,11 +92,12 @@ enum ShellExecutor {
                     return
                 }
 
+                let output = PipeDrain(pipe)
                 let timer = scheduleTimeoutWatchdog(for: process, timeout: timeout)
                 defer { timer.cancel() }
 
                 process.waitUntilExit()
-                continuation.resume(returning: readString(from: pipe))
+                continuation.resume(returning: output.string())
             }
         }
     }
@@ -115,12 +137,14 @@ enum ShellExecutor {
                     return
                 }
 
+                let outDrain = PipeDrain(stdoutPipe)
+                let errDrain = PipeDrain(stderrPipe)
                 let timer = scheduleTimeoutWatchdog(for: process, timeout: timeout)
                 defer { timer.cancel() }
 
                 process.waitUntilExit()
-                let stdout = readString(from: stdoutPipe)
-                let stderr = readString(from: stderrPipe)
+                let stdout = outDrain.string()
+                let stderr = errDrain.string()
 
                 continuation.resume(returning: WidgetRunResult(
                     stdout: stdout,
@@ -143,10 +167,11 @@ enum ShellExecutor {
             return ""
         }
 
+        let output = PipeDrain(pipe)
         let timer = scheduleTimeoutWatchdog(for: process, timeout: timeout)
         defer { timer.cancel() }
 
         process.waitUntilExit()
-        return readString(from: pipe)
+        return output.string()
     }
 }

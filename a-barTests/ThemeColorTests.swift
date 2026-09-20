@@ -49,13 +49,19 @@ final class ThemeColorTests: XCTestCase {
     assertComponents(Color(hex: "#zzz"), red: 0, green: 0, blue: 0, alpha: 1)
   }
 
-  func testAnEightCharacterNonHexStringBecomesInvisible() {
-    // FINDING, pinned rather than fixed: any 8-character junk string lands in the ARGB branch,
-    // scans as 0, and yields alpha 0. A mistyped colour override disappears instead of
-    // falling back to something visible.
-    let parts = components(Color(hex: "nonsense"))
+  func testAnUnreadableColourFallsBackToSomethingVisible() {
+    // regression: `scanHexInt64` stops at the first non-hex character and still reports success,
+    // so any 8-character typo fell into the ARGB branch, scanned as 0, and produced alpha 0.
+    // The element disappeared from the bar rather than showing a colour the user could correct.
+    assertComponents(Color(hex: "nonsense"), red: 0, green: 0, blue: 0, alpha: 1)
+    assertComponents(Color(hex: "abcdefgh"), red: 0, green: 0, blue: 0, alpha: 1)
+    assertComponents(Color(hex: "#zzzzzz"), red: 0, green: 0, blue: 0, alpha: 1)
+  }
 
-    XCTAssertEqual(parts[3], 0, accuracy: 0.01, "an unreadable override renders invisible")
+  func testAValidColourIsStillReadAfterThatCheck() {
+    // The readability check must not reject the values that do work.
+    assertComponents(Color(hex: "#1B222D"), red: 0.106, green: 0.133, blue: 0.176)
+    assertComponents(Color(hex: "#80FF0000"), red: 1, green: 0, blue: 0, alpha: 0.502)
   }
 
   // MARK: - Writing a hex colour back out
@@ -66,12 +72,32 @@ final class ThemeColorTests: XCTestCase {
     XCTAssertEqual(Color(hex: "#000000").hexString, "#000000")
   }
 
-  func testARoundTripCanLoseOneStepPerChannel() {
-    // FINDING, pinned rather than fixed: `hexString` truncates with `Int()` instead of rounding,
-    // so 0x22 -> 34/255 -> 33.99... -> 0x21. The default theme's own background does not survive
-    // a round trip, and a value re-saved repeatedly drifts downwards.
-    XCTAssertEqual(
-      Color(hex: "#1B222D").hexString, "#1B212C", "0x22 and 0x2D each lose a step")
+  func testAColourSurvivesARoundTripWhateverItsChannels() {
+    // regression: `hexString` truncated with `Int()`, so 0x22 -> 33.999... -> 0x21. The default
+    // theme's own background did not survive a round trip, and a value re-saved through the
+    // picker walked steadily darker.
+    XCTAssertEqual(Color(hex: "#1B222D").hexString, "#1B222D")
+  }
+
+  func testEveryChannelValueSurvivesARoundTrip() {
+    // One step lost anywhere in the range is a theme that drifts; check the whole range.
+    for value in 0...255 {
+      let hex = String(format: "#%02X%02X%02X", value, value, value)
+      XCTAssertEqual(Color(hex: hex).hexString, hex, "channel value \(value) did not survive")
+    }
+  }
+
+  func testEveryPresetColourSurvivesARoundTrip() {
+    // The picker reads a theme colour out and writes it back when the user edits a neighbour.
+    for preset in ThemePreset.allCases {
+      let theme = preset.theme
+      XCTAssertEqual(
+        Color(hex: theme.background.hexString).hexString, theme.background.hexString,
+        "\(preset.rawValue) background drifts")
+      XCTAssertEqual(
+        Color(hex: theme.accent.hexString).hexString, theme.accent.hexString,
+        "\(preset.rawValue) accent drifts")
+    }
   }
 
   // MARK: - Relative luminance

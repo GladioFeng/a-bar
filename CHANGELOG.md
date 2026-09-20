@@ -16,6 +16,10 @@ All notable changes to this project will be documented in this file.
 - feat: refactor Wi-Fi functionality into a dedicated service like the Bluetooth widget
 - ci: run the test suite on every push and pull request, and fail the build when a test file is not a member of the test target
 - test: cover widget layout accessors, graph history, AeroSpace decoding and theme colour handling
+- fix: a custom widget script that prints more than 64KB no longer hangs until its timeout and comes back cut off - its output is now read while the script runs
+- fix: an unreadable colour value is no longer rendered fully transparent, which made the widget disappear instead of showing a colour that could be corrected
+- fix: colour values no longer lose a step per channel each time they are saved, which made a customised theme drift darker over repeated edits
+- test: cover yabai state filtering, the formatting and colour helpers, and shell command execution
 
 ## v1.5.2 - 2026-09-20
 
