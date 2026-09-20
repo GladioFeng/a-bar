@@ -1,17 +1,16 @@
-// 代码目的：验证真实 YabaiService 在突发事件、失败和停止时的刷新行为。
-//
-// 代码逻辑：
-// 1. 使用临时 yabai 命令返回受控 JSON，隔离真实桌面。
-// 2. 观察查询数量、并发执行和完整状态发布。
-// 3. 检查错误恢复、请求合并与生命周期。
-//
-// 必需输入：无；测试自动创建临时配置和命令。
-// 预期输出：XCTest 结果；不修改用户配置或 yabai 信号。
 import AppKit
 import Combine
 import XCTest
 import Darwin
 
+/// Window and Space events arrive in bursts, and each one used to start its own overlapping
+/// set of yabai queries. A burst has to collapse into one active batch plus a single
+/// follow-up, only whole snapshots may be published, and a generation that has been stopped
+/// or repointed at a new executable must never write over a newer one.
+///
+/// A temporary stand-in for the yabai binary returns fixed JSON on demand, so these tests can
+/// count queries and watch what gets published without touching the real desktop, the user's
+/// config, or the yabai signals they already have registered.
 final class YabaiServiceTests: XCTestCase {
     private var directory: URL!
     private var service: YabaiService!
@@ -25,10 +24,9 @@ final class YabaiServiceTests: XCTestCase {
         let executable = directory.appendingPathComponent("yabai")
         try """
         #!/bin/sh
-        # 代码目的：记录测试查询并返回 fixture，不访问真实 yabai。
-        # 代码逻辑：记录参数，等待测试闸门，再输出固定数据。
-        # 必需输入：yabai query/signal 参数；同目录 JSON fixture。
-        # 预期输出：fixture JSON 和 calls 记录。
+        # Stands in for yabai, so nothing here reaches the real one. Logs every call, holds
+        # each query at the test's gate file, then prints the fixture for the collection asked
+        # for. Reads the JSON fixtures beside it; writes the call log next to them.
         root=${0%/*}
         printf '%s\\n' "$2 $3" >> "$root/calls"
         if [ "$2" = query ]; then
@@ -149,6 +147,7 @@ final class YabaiServiceTests: XCTestCase {
         service.stop()
         await waitFor { calls.filter { $0 == "signal --remove" }.count == 3 }
     }
+
     @MainActor
     func testNativeNotificationRefreshesAndQuickRestartKeepsSignals() async throws {
         service.start()
