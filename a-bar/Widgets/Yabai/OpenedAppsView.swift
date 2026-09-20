@@ -34,43 +34,22 @@ struct OpenedAppsView: View {
             windows = yabaiService.state.windows(forSpace: space.index)
         }
         // Apply exclusions
-        let exclusions = spacesSettings.exclusions
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-        let titleExclusions = spacesSettings.titleExclusions
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-        var filtered = windows.filter { window in
-            // Check app name exclusions
-            let appExcluded = spacesSettings.exclusionsAsRegex
-                ? exclusions.contains { window.app.matches(pattern: $0) }
-                : exclusions.contains(window.app)
-            // Check title exclusions
-            let titleExcluded = spacesSettings.exclusionsAsRegex
-                ? titleExclusions.contains { window.title.matches(pattern: $0) }
-                : titleExclusions.contains { window.title.contains($0) }
-            return !appExcluded && !titleExcluded
-        }
+        var filtered = WindowFilter.excludingWindows(
+            windows,
+            excludingApps: spacesSettings.exclusions,
+            excludingTitles: spacesSettings.titleExclusions,
+            asRegex: spacesSettings.exclusionsAsRegex,
+            appName: \.app,
+            title: \.title
+        )
         // Remove duplicates if enabled
         if spacesSettings.hideDuplicateApps {
-            var seen = Set<String>()
-            filtered = filtered.filter { window in
-                if seen.contains(window.app) {
-                    return false
-                }
-                seen.insert(window.app)
-                return true
-            }
+            filtered = WindowFilter.deduplicatedByApp(filtered, appName: \.app)
         }
-        // Order by stack index if available, else by position (frame.x)
-        filtered.sort {
-            if let idxA = $0.stackIndex, let idxB = $1.stackIndex, idxA != idxB {
-                return idxA < idxB
-            }
-            // Otherwise, order by x position (left to right)
-            return $0.frame.x < $1.frame.x
-        }
-        return filtered
+        // Order down a stack first, then left to right
+        return WindowFilter.orderedByStackThenPosition(
+            filtered, stackIndex: \.stackIndex, x: \.frame.x
+        )
     }
 }
 

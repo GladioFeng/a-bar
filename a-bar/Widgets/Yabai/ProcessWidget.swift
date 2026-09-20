@@ -32,13 +32,10 @@ struct ProcessWidget: View {
             return state.windows
         }()
 
-        // Order windows the same way as OpenedAppsView: by stackIndex then by x position
-        let orderedWindows = windowsOnCurrentSpace.sorted {
-            if let idxA = $0.stackIndex, let idxB = $1.stackIndex, idxA != idxB {
-                return idxA < idxB
-            }
-            return $0.frame.x < $1.frame.x
-        }
+        // Order windows the same way as OpenedAppsView, by the same call
+        let orderedWindows = WindowFilter.orderedByStackThenPosition(
+            windowsOnCurrentSpace, stackIndex: \.stackIndex, x: \.frame.x
+        )
 
         // Determine current space and layout mode for this view
         let currentSpace: YabaiSpace? = {

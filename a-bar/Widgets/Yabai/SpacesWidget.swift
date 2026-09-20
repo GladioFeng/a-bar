@@ -49,21 +49,12 @@ struct SpacesWidget: View {
         }
         
         // Apply exclusions
-        let exclusions = spacesSettings.exclusions
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-        
-        spaces = spaces.filter { space in
-            let label = space.displayLabel
-            
-            if spacesSettings.exclusionsAsRegex {
-                return !exclusions.contains { pattern in
-                    label.matches(pattern: pattern)
-                }
-            } else {
-                return !exclusions.contains(label)
-            }
-        }
+        spaces = WindowFilter.excludingLabels(
+            spaces,
+            excluding: spacesSettings.exclusions,
+            asRegex: spacesSettings.exclusionsAsRegex,
+            label: \.displayLabel
+        )
         
         // Hide empty spaces if enabled
         if spacesSettings.hideEmptySpaces {
@@ -114,15 +105,10 @@ struct StickyWindowsView: View {
         )
     }
     
+    /// One icon per app: the pinned row says which apps follow you between spaces, not how
+    /// many windows each one has, so this is not gated on `hideDuplicateApps`.
     private var uniqueApps: [YabaiWindow] {
-        var seen = Set<String>()
-        return windows.filter { window in
-            if seen.contains(window.app) {
-                return false
-            }
-            seen.insert(window.app)
-            return true
-        }
+        WindowFilter.deduplicatedByApp(windows, appName: \.app)
     }
 }
 

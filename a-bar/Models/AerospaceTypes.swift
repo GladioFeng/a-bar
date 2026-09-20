@@ -178,15 +178,7 @@ struct AerospaceState: Equatable {
 
     /// Get unique apps in a workspace
     func uniqueApps(forWorkspace name: String) -> [AerospaceWindow] {
-        let windows = self.windows(forWorkspace: name)
-        var seenApps = Set<String>()
-        return windows.filter { window in
-            if seenApps.contains(window.appName) {
-                return false
-            }
-            seenApps.insert(window.appName)
-            return true
-        }
+        return WindowFilter.deduplicatedByApp(windows(forWorkspace: name), appName: \.appName)
     }
 }
 

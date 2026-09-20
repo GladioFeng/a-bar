@@ -44,22 +44,13 @@ struct AerospaceSpacesWidget: View {
             }
         }
 
-        // Apply exclusions
-        let exclusions = spacesSettings.exclusions
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-
-        workspaces = workspaces.filter { workspace in
-            let label = workspace.displayLabel
-
-            if spacesSettings.exclusionsAsRegex {
-                return !exclusions.contains { pattern in
-                    label.matches(pattern: pattern)
-                }
-            } else {
-                return !exclusions.contains(label)
-            }
-        }
+        // Apply exclusions - the same rules the yabai spaces widget applies
+        workspaces = WindowFilter.excludingLabels(
+            workspaces,
+            excluding: spacesSettings.exclusions,
+            asRegex: spacesSettings.exclusionsAsRegex,
+            label: \.displayLabel
+        )
 
         // Hide empty workspaces if enabled
         if spacesSettings.hideEmptySpaces {

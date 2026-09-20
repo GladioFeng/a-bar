@@ -221,14 +221,7 @@ struct YabaiState: Equatable {
     /// Get unique apps in a space
     func uniqueApps(forSpace spaceIndex: Int, excludingSticky: Bool = true) -> [YabaiWindow] {
         let spaceWindows = excludingSticky ? nonStickyWindows(forSpace: spaceIndex) : windows(forSpace: spaceIndex)
-        var seenApps = Set<String>()
-        return spaceWindows.filter { window in
-            if seenApps.contains(window.app) {
-                return false
-            }
-            seenApps.insert(window.app)
-            return true
-        }
+        return WindowFilter.deduplicatedByApp(spaceWindows, appName: \.app)
     }
 }
 

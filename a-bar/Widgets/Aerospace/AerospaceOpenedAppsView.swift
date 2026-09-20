@@ -26,38 +26,23 @@ struct AerospaceOpenedAppsView: View {
     }
 
     private var displayedApps: [AerospaceWindow] {
-        var windows = workspace.windows
-
-        // Apply exclusions
-        let exclusions = spacesSettings.exclusions
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-        let titleExclusions = spacesSettings.titleExclusions
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-
-        windows = windows.filter { window in
-            let appExcluded = spacesSettings.exclusionsAsRegex
-                ? exclusions.contains { window.appName.matches(pattern: $0) }
-                : exclusions.contains(window.appName)
-            let titleExcluded = spacesSettings.exclusionsAsRegex
-                ? titleExclusions.contains { window.windowTitle.matches(pattern: $0) }
-                : titleExclusions.contains { window.windowTitle.contains($0) }
-            return !appExcluded && !titleExcluded
-        }
+        // Apply exclusions - the same rules the yabai opened-apps row applies
+        var windows = WindowFilter.excludingWindows(
+            workspace.windows,
+            excludingApps: spacesSettings.exclusions,
+            excludingTitles: spacesSettings.titleExclusions,
+            asRegex: spacesSettings.exclusionsAsRegex,
+            appName: \.appName,
+            title: \.windowTitle
+        )
 
         // Remove duplicates if enabled
         if spacesSettings.hideDuplicateApps {
-            var seen = Set<String>()
-            windows = windows.filter { window in
-                if seen.contains(window.appName) {
-                    return false
-                }
-                seen.insert(window.appName)
-                return true
-            }
+            windows = WindowFilter.deduplicatedByApp(windows, appName: \.appName)
         }
 
+        // AeroSpace reports neither a stack index nor a frame, so there is nothing to order by:
+        // the row stays in the order `aerospace list-windows` returned.
         return windows
     }
 }
