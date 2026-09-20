@@ -1,8 +1,8 @@
 # <img src="./images/a-bar-logo.png" width="200" alt="a-bar" />
 
-[![Version](https://raw.githubusercontent.com/Jean-Tinland/a-bar/badges/version.svg)](https://github.com/Jean-Tinland/a-bar/releases/latest)
+[![Version](https://raw.githubusercontent.com/Jean-Tinland/a-bar/badges/version.svg?v=1)](https://github.com/Jean-Tinland/a-bar/releases/latest)
 [![Tests](https://github.com/Jean-Tinland/a-bar/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/Jean-Tinland/a-bar/actions/workflows/tests.yml)
-[![Coverage](https://raw.githubusercontent.com/Jean-Tinland/a-bar/badges/coverage.svg)](https://github.com/Jean-Tinland/a-bar/actions/workflows/tests.yml)
+[![Coverage](https://raw.githubusercontent.com/Jean-Tinland/a-bar/badges/coverage.svg?v=1)](https://github.com/Jean-Tinland/a-bar/actions/workflows/tests.yml)
 
 Yet **a(nother) bar** :)
 
