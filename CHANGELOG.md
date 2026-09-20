@@ -20,6 +20,8 @@ All notable changes to this project will be documented in this file.
 - fix: an unreadable colour value is no longer rendered fully transparent, which made the widget disappear instead of showing a colour that could be corrected
 - fix: colour values no longer lose a step per channel each time they are saved, which made a customised theme drift darker over repeated edits
 - test: cover yabai state filtering, the formatting and colour helpers, and shell command execution
+- fix: a custom widget script whose output uses Windows line endings now shows its dropdown instead of printing the whole script into the bar with stray characters
+- test: cover xbar-style script output parsing, and split the parser from its menu building
 
 ## v1.5.2 - 2026-09-20
 

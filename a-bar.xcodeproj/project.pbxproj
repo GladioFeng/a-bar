@@ -65,6 +65,7 @@
 		A1000086 /* WidgetPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000086 /* WidgetPopover.swift */; };
 		A1000084 /* RefreshWidgetCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000084 /* RefreshWidgetCommand.swift */; };
 		A1000085 /* XBarParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000085 /* XBarParser.swift */; };
+		A1000100 /* XBarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000100 /* XBarMenu.swift */; };
 		A1000090 /* sfsymbols.txt in Resources */ = {isa = PBXBuildFile; fileRef = E1000012 /* sfsymbols.txt */; };
 		E1000014 /* a-bar.sdef in Resources */ = {isa = PBXBuildFile; fileRef = E1000013 /* a-bar.sdef */; };
 		A1000200 /* SettingsFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000200 /* SettingsFixtures.swift */; };
@@ -86,6 +87,8 @@
 		A1000217 /* YabaiTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000010 /* YabaiTypes.swift */; };
 		A1000218 /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000083 /* Extensions.swift */; };
 		A1000219 /* ShellExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000080 /* ShellExecutor.swift */; };
+		A1000220 /* XBarParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000085 /* XBarParser.swift */; };
+		A1000307 /* XBarParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000307 /* XBarParserTests.swift */; };
 		A1000304 /* YabaiStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000304 /* YabaiStateTests.swift */; };
 		A1000305 /* FormattingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000305 /* FormattingTests.swift */; };
 		A1000306 /* ShellExecutorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000306 /* ShellExecutorTests.swift */; };
@@ -150,6 +153,7 @@
 		B1000086 /* WidgetPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPopover.swift; sourceTree = "<group>"; };
 		B1000084 /* RefreshWidgetCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefreshWidgetCommand.swift; sourceTree = "<group>"; };
 		B1000085 /* XBarParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XBarParser.swift; sourceTree = "<group>"; };
+		B1000100 /* XBarMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XBarMenu.swift; sourceTree = "<group>"; };
 		D1000001 /* a-bar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "a-bar.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E1000010 /* a-bar.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "a-bar.entitlements"; sourceTree = "<group>"; };
 		E1000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -167,6 +171,7 @@
 		B1000304 /* YabaiStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "YabaiStateTests.swift"; sourceTree = "<group>"; };
 		B1000305 /* FormattingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FormattingTests.swift"; sourceTree = "<group>"; };
 		B1000306 /* ShellExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ShellExecutorTests.swift"; sourceTree = "<group>"; };
+		B1000307 /* XBarParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "XBarParserTests.swift"; sourceTree = "<group>"; };
 		D1000002 /* a-barTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "a-barTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -242,6 +247,7 @@
 				B1000024 /* WifiService.swift */,
 				B1000084 /* RefreshWidgetCommand.swift */,
 			B1000085 /* XBarParser.swift */,
+				B1000100 /* XBarMenu.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -386,6 +392,7 @@
 				B1000304 /* YabaiStateTests.swift */,
 				B1000305 /* FormattingTests.swift */,
 				B1000306 /* ShellExecutorTests.swift */,
+				B1000307 /* XBarParserTests.swift */,
 			);
 			path = "a-barTests";
 			sourceTree = "<group>";
@@ -535,6 +542,7 @@
 				C1000005 /* AerospaceOpenedAppsView.swift in Sources */,
 				C1000006 /* AerospaceProcessWidget.swift in Sources */,
 				A1000085 /* XBarParser.swift in Sources */,
+				A1000100 /* XBarMenu.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -554,6 +562,7 @@
 				A1000304 /* YabaiStateTests.swift in Sources */,
 				A1000305 /* FormattingTests.swift in Sources */,
 				A1000306 /* ShellExecutorTests.swift in Sources */,
+				A1000307 /* XBarParserTests.swift in Sources */,
 				A1000210 /* Settings.swift in Sources */,
 				A1000211 /* SettingsCodec.swift in Sources */,
 				A1000212 /* SettingsStore.swift in Sources */,
@@ -564,6 +573,7 @@
 				A1000217 /* YabaiTypes.swift in Sources */,
 				A1000218 /* Extensions.swift in Sources */,
 				A1000219 /* ShellExecutor.swift in Sources */,
+				A1000220 /* XBarParser.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
