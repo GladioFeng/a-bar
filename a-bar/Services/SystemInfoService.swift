@@ -47,7 +47,7 @@ class SystemInfoService: ObservableObject {
 
     // Storage volumes
     @Published private(set) var volumes: [StorageVolume] = []
-    private var timer: Timer?
+    private var activeWidgets = Set<WidgetIdentifier>()
 
     /// Cached host port to avoid Mach port leaks.
     /// Each call to mach_host_self() creates a new send right that must be
@@ -58,53 +58,47 @@ class SystemInfoService: ObservableObject {
 
     private init() {
         setupKeyboardLayoutObserver()
-        refreshVolumes()
-        setupAutoRefresh()
         setupNotifications()
     }
 
-    deinit {
-        timer?.invalidate()
-    }
-
-    func start() {
-        refreshBattery()
-        refreshCPU()
-        refreshMemory()
-        refreshGPU()
-        refreshNetworkStats()
-        refreshDiskStats()
-        refreshVolume()
-        refreshMic()
-        refreshKeyboard()
-        refreshCaffeinate()
-
+    func start(widgets: Set<WidgetIdentifier>) {
+        stop()
+        activeWidgets = widgets
+        refresh()
         startTimers()
     }
 
     func stop() {
         refreshTimers.values.forEach { $0.invalidate() }
         refreshTimers.removeAll()
+        activeWidgets.removeAll()
     }
 
     func refresh() {
-        refreshBattery()
-        refreshCPU()
-        refreshMemory()
-        refreshGPU()
-        refreshNetworkStats()
-        refreshDiskStats()
-        refreshVolume()
-        refreshMic()
-        refreshKeyboard()
-        refreshCaffeinate()
+        for widget in activeWidgets { refresh(widget) }
+    }
+
+    private func refresh(_ widget: WidgetIdentifier) {
+        switch widget {
+        case .battery: refreshBattery(); refreshCaffeinate()
+        case .cpu: refreshCPU()
+        case .memory: refreshMemory()
+        case .gpu: refreshGPU()
+        case .netstats: refreshNetworkStats()
+        case .diskActivity: refreshDiskStats()
+        case .sound: refreshVolume()
+        case .mic: refreshMic()
+        case .keyboard: refreshKeyboard()
+        case .storage: refreshVolumes()
+        default: break
+        }
     }
 
     func refreshBattery() {
         DispatchQueue.global(qos: .background).async {
             let info = self.getBatteryInfo()
             DispatchQueue.main.async {
-                self.batteryInfo = info
+                if self.batteryInfo != info { self.batteryInfo = info }
             }
         }
     }
@@ -644,9 +638,9 @@ class SystemInfoService: ObservableObject {
         let deviceName = getAudioOutputDeviceName()
 
         DispatchQueue.main.async {
-            self.volumeLevel = volume
-            self.isMuted = muted
-            self.audioOutputDeviceName = deviceName
+            if self.volumeLevel != volume { self.volumeLevel = volume }
+            if self.isMuted != muted { self.isMuted = muted }
+            if self.audioOutputDeviceName != deviceName { self.audioOutputDeviceName = deviceName }
         }
     }
 
@@ -813,9 +807,9 @@ class SystemInfoService: ObservableObject {
         let deviceName = getAudioInputDeviceName()
 
         DispatchQueue.main.async {
-            self.audioInputDeviceName = deviceName
-            self.micLevel = level
-            self.isMicMuted = muted
+            if self.audioInputDeviceName != deviceName { self.audioInputDeviceName = deviceName }
+            if self.micLevel != level { self.micLevel = level }
+            if self.isMicMuted != muted { self.isMicMuted = muted }
         }
     }
 
@@ -945,7 +939,7 @@ class SystemInfoService: ObservableObject {
     func refreshKeyboard() {
         let layout = getCurrentKeyboardLayout()
         DispatchQueue.main.async {
-            self.keyboardLayout = layout
+            if self.keyboardLayout != layout { self.keyboardLayout = layout }
         }
     }
 
@@ -965,7 +959,8 @@ class SystemInfoService: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.refreshKeyboard()
+            guard let self, self.activeWidgets.contains(.keyboard) else { return }
+            self.refreshKeyboard()
         }
     }
 
@@ -981,7 +976,7 @@ class SystemInfoService: ObservableObject {
                 active = self.isAnyCaffeinateRunning()
             }
             DispatchQueue.main.async {
-                self.isCaffeinateActive = active
+                if self.isCaffeinateActive != active { self.isCaffeinateActive = active }
             }
         }
     }
@@ -1098,57 +1093,25 @@ class SystemInfoService: ObservableObject {
     }
 
     private func startTimers() {
-        // Ensure caffeinate is stopped on bar restart
-        caffeinateProcess?.terminate()
-        caffeinateProcess = nil
-        caffeinateProcessKeepAlive = nil
-
         let settings = settingsManager.settings.widgets
-
-        // Battery timer
-        scheduleTimer(id: "battery", interval: settings.battery.refreshInterval) { [weak self] in
-            self?.refreshBattery()
-            self?.refreshCaffeinate()
-        }
-
-        // CPU timer
-        scheduleTimer(id: "cpu", interval: settings.cpu.refreshInterval) { [weak self] in
-            self?.refreshCPU()
-        }
-
-        // Memory timer
-        scheduleTimer(id: "memory", interval: settings.memory.refreshInterval) { [weak self] in
-            self?.refreshMemory()
-        }
-
-        // GPU timer
-        scheduleTimer(id: "gpu", interval: settings.gpu.refreshInterval) { [weak self] in
-            self?.refreshGPU()
-        }
-
-        // Network stats timer
-        scheduleTimer(id: "netstats", interval: settings.netstats.refreshInterval) { [weak self] in
-            self?.refreshNetworkStats()
-        }
-
-        // Disk activity timer
-        scheduleTimer(id: "diskActivity", interval: settings.diskActivity.refreshInterval) { [weak self] in
-            self?.refreshDiskStats()
-        }
-
-        // Volume timer
-        scheduleTimer(id: "volume", interval: settings.sound.refreshInterval) { [weak self] in
-            self?.refreshVolume()
-        }
-
-        // Mic timer
-        scheduleTimer(id: "mic", interval: settings.mic.refreshInterval) { [weak self] in
-            self?.refreshMic()
-        }
-
-        // Keyboard timer
-        scheduleTimer(id: "keyboard", interval: settings.keyboard.refreshInterval) { [weak self] in
-            self?.refreshKeyboard()
+        for widget in activeWidgets {
+            let interval: TimeInterval
+            switch widget {
+            case .battery: interval = settings.battery.refreshInterval
+            case .cpu: interval = settings.cpu.refreshInterval
+            case .memory: interval = settings.memory.refreshInterval
+            case .gpu: interval = settings.gpu.refreshInterval
+            case .netstats: interval = settings.netstats.refreshInterval
+            case .diskActivity: interval = settings.diskActivity.refreshInterval
+            case .sound: interval = settings.sound.refreshInterval
+            case .mic: interval = settings.mic.refreshInterval
+            case .keyboard: interval = settings.keyboard.refreshInterval
+            case .storage: interval = settings.storage.refreshInterval
+            default: continue
+            }
+            scheduleTimer(id: widget.rawValue, interval: interval) { [weak self] in
+                self?.refresh(widget)
+            }
         }
     }
 
@@ -1191,12 +1154,6 @@ class SystemInfoService: ObservableObject {
         }
     }
 
-    private func setupAutoRefresh() {
-        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            self?.refreshVolumes()
-        }
-    }
-
     private func setupNotifications() {
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(self, selector: #selector(handleMount), name: NSWorkspace.didMountNotification, object: nil)
@@ -1204,6 +1161,7 @@ class SystemInfoService: ObservableObject {
     }
 
     @objc private func handleMount(_ notification: Notification) {
+        guard activeWidgets.contains(.storage) else { return }
         refreshVolumes()
     }
 }

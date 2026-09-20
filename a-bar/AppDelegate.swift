@@ -204,6 +204,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   // Create bar windows based on current screen configuration and layout settings
   private func setupBarWindows() {
+    defer { updateSystemServices() }
     // Remove existing windows
     barWindows.values.forEach { $0.close() }
     barWindows.removeAll()
@@ -265,11 +266,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     case .aerospace:
       aerospaceService.start()
     }
+  }
 
-    // Start system info service
-    systemInfoService.start()
-    bluetoothService.start()
-    wifiService.start()
+  private var visibleWidgets: Set<WidgetIdentifier> {
+    settingsManager.settings.global.barEnabled
+      ? layoutManager.multiDisplayLayout.enabledWidgets(displayCount: NSScreen.screens.count)
+      : []
+  }
+
+  /// Hidden widgets must not poll or initialize blocking hardware APIs.
+  private func updateSystemServices() {
+    let widgets = visibleWidgets
+    systemInfoService.start(widgets: widgets)
+    if widgets.contains(.bluetooth) { bluetoothService.start() } else { bluetoothService.stop() }
+    if widgets.contains(.wifi) { wifiService.start() } else { wifiService.stop() }
   }
 
   // Subscribe to settings changes to update bar windows and launch at login status
@@ -294,14 +304,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   // Handle changes in settings to update bar windows and launch at login status
   private func handleSettingsChange(_ settings: ABarSettings) {
-    // Update bar visibility
-    if settings.global.barEnabled {
-      // Recreate windows to apply any appearance changes
-      setupBarWindows()
-    } else {
-      barWindows.values.forEach { $0.close() }
-      barWindows.removeAll()
-    }
+    setupBarWindows()
 
     // Restart window manager services if the WM changed
     restartWindowManagerServices(settings.global.windowManager)
@@ -387,8 +390,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       aerospaceService.refresh()
     }
     systemInfoService.refresh()
-    bluetoothService.refresh()
-    wifiService.refresh()
+    let widgets = visibleWidgets
+    if widgets.contains(.bluetooth) { bluetoothService.refresh() }
+    if widgets.contains(.wifi) { wifiService.refresh() }
     barWindows.values.forEach { $0.refresh() }
   }
 

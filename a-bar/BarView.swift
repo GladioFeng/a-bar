@@ -7,7 +7,6 @@ struct BarView: View {
   let position: BarPosition
 
   @EnvironmentObject var settings: SettingsManager
-  @EnvironmentObject var yabaiService: YabaiService
   @EnvironmentObject var layoutManager: LayoutManager
 
   private var theme: ABarTheme {
@@ -124,11 +123,6 @@ struct WidgetContainer: View {
   let position: BarPosition
 
   @EnvironmentObject var settings: SettingsManager
-  @EnvironmentObject var yabaiService: YabaiService
-  @EnvironmentObject var aerospaceService: AerospaceService
-  @EnvironmentObject var systemInfoService: SystemInfoService
-  @EnvironmentObject var bluetoothService: BluetoothService
-  @EnvironmentObject var wifiService: WifiService
 
   var body: some View {
     Group {

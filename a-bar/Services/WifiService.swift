@@ -35,6 +35,7 @@ final class WifiService: ObservableObject {
   private let location = WifiLocationAuthorization()
 
   private var refreshTimer: Timer?
+  private var isStarted = false
   private var isPopoverOpen = false
   /// SSIDs macOS already has credentials for, so a click can join them straight away
   /// instead of asking for a passphrase the keychain already holds.
@@ -47,7 +48,8 @@ final class WifiService: ObservableObject {
   private let workQueue = DispatchQueue(label: "com.a-bar.wifi", qos: .userInitiated)
 
   private lazy var observer = WifiEventObserver { [weak self] in
-    self?.refreshState()
+    guard let self, self.isStarted else { return }
+    self.refreshState()
   }
 
   private var settings: WifiWidgetSettings {
@@ -59,10 +61,11 @@ final class WifiService: ObservableObject {
       .removeDuplicates()
       .receive(on: DispatchQueue.main)
       .sink { [weak self] _ in
+        guard let self, self.isStarted else { return }
         // The grant unredacts SSIDs, so everything on screen is stale the moment it
         // lands — including a scan whose results all had nil names.
-        self?.refreshState()
-        self?.scanIfNeeded(force: true)
+        self.refreshState()
+        self.scanIfNeeded(force: true)
       }
       .store(in: &cancellables)
   }
@@ -70,12 +73,15 @@ final class WifiService: ObservableObject {
   // MARK: - Lifecycle
 
   func start() {
+    let wasStarted = isStarted
+    isStarted = true
     refreshState()
-    startMonitoring()
+    if !wasStarted { startMonitoring() }
     startTimer()
   }
 
   func stop() {
+    isStarted = false
     refreshTimer?.invalidate()
     refreshTimer = nil
     try? client.stopMonitoringAllEvents()

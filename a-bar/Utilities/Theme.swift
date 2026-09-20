@@ -97,7 +97,7 @@ enum ThemePreset: String, Codable, CaseIterable, Identifiable {
         magenta: Color(hex: "#ad82cb"),
         cyan: Color(hex: "#7eddde"),
         foreground: Color(hex: "#ffffff"),
-        background: Color(hex: "#1b222d"),
+        background: Color(hex: "#1b222d")
       )
 
     case .nightOwl:
@@ -277,7 +277,7 @@ enum ThemePreset: String, Codable, CaseIterable, Identifiable {
         magenta: Color(hex: "#ad82cb"),
         cyan: Color(hex: "#2fc2c3"),
         foreground: Color(hex: "#1b222d"),
-        background: Color(hex: "#f7f7f7"),
+        background: Color(hex: "#f7f7f7")
       )
         
     case .oneLight:
@@ -417,7 +417,7 @@ enum ThemeManager {
       magenta: overrides.magenta.flatMap { Color(hex: $0) } ?? theme.magenta,
       cyan: overrides.cyan.flatMap { Color(hex: $0) } ?? theme.cyan,
       foreground: overrides.foreground.flatMap { Color(hex: $0) } ?? theme.foreground,
-      background: overrides.background.flatMap { Color(hex: $0) } ?? theme.background,
+      background: overrides.background.flatMap { Color(hex: $0) } ?? theme.background
     )
   }
 }

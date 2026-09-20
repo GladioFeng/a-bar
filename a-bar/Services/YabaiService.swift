@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Darwin
 
 /// Service for interacting with yabai window manager
 class YabaiService: ObservableObject {
@@ -10,10 +11,20 @@ class YabaiService: ObservableObject {
     @Published private(set) var lastError: Error?
     @Published private(set) var signalsRegistered = false
 
-    private var refreshWorkItem: DispatchWorkItem?
-    private let refreshDebounceInterval: TimeInterval = 0.1
     private var signalTimer: Timer?
-    private let settingsManager = SettingsManager.shared
+    private var signalTask: Task<Void, Never>?
+    private let refreshNotification: String
+    private var signalPath: String?
+    private static let signalEvents = [
+        ("window_destroyed", "abar-window-destroyed"),
+        ("window_title_changed", "abar-window-title-changed"),
+        ("window_focused", "abar-window-focused"),
+    ]
+    private let settingsManager: SettingsManager
+    private var isStarted = false
+    private var refreshGeneration = 0
+    private var isRefreshing = false
+    private var refreshPending = false
 
     private var yabaiPath: String {
         settingsManager.settings.global.yabaiPath
@@ -23,8 +34,12 @@ class YabaiService: ObservableObject {
     private var appObservers: [NSObjectProtocol] = []
     private var screenObserver: NSObjectProtocol?
 
-    private init() {
-        // Service initialized but observers not set up until start() is called
+    init(
+        settingsManager: SettingsManager = .shared,
+        refreshNotification: String = "user.uid.\(getuid()).com.jeantinland.a-bar.yabai"
+    ) {
+        self.settingsManager = settingsManager
+        self.refreshNotification = refreshNotification
     }
 
     private func setupObservers() {
@@ -70,12 +85,37 @@ class YabaiService: ObservableObject {
 
     // Handle NSWorkspace app notifications
     private func handleAppNotification(_ note: Notification) {
-        // Always refresh on these events, but debounce to avoid overlapping
-        debounceRefresh()
+        refresh()
     }
 
     /// Start the yabai service
     func start() {
+        if isStarted {
+            if signalPath != yabaiPath {
+                refreshGeneration += 1
+                isRefreshing = false
+                refreshPending = false
+                updateSignals(register: false, path: signalPath ?? yabaiPath)
+                signalPath = yabaiPath
+                setupYabaiSignals()
+                refresh()
+            }
+            return
+        }
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            { _, observer, _, _, _ in
+                guard let observer else { return }
+                let service = Unmanaged<YabaiService>.fromOpaque(observer).takeUnretainedValue()
+                DispatchQueue.main.async { [weak service] in
+                    guard let service, service.isStarted else { return }
+                    service.refresh()
+                }
+            },
+            refreshNotification as CFString, nil, .deliverImmediately)
+        isStarted = true
+        signalPath = yabaiPath
         setupObservers()
         refresh()
         setupYabaiSignals()
@@ -84,6 +124,14 @@ class YabaiService: ObservableObject {
 
     /// Stop the yabai service
     func stop() {
+        isStarted = false
+        CFNotificationCenterRemoveObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            CFNotificationName(refreshNotification as CFString), nil)
+        refreshGeneration += 1
+        isRefreshing = false
+        refreshPending = false
         if let observer = spaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
             spaceObserver = nil
@@ -102,10 +150,10 @@ class YabaiService: ObservableObject {
         // Stop signal timer
         stopSignalTimer()
         
-        // Remove yabai signals on stop
-        Task {
-            await removeYabaiSignals()
-        }
+        // Serialize removal with registration, including a quick stop/start cycle.
+        updateSignals(register: false, path: signalPath ?? yabaiPath)
+        signalPath = nil
+        if signalsRegistered { signalsRegistered = false }
     }
     
     /// Start the periodic timer to re-register yabai signals
@@ -125,146 +173,86 @@ class YabaiService: ObservableObject {
         signalTimer = nil
     }
     
-    /// Yabai signal action string, pre-escaped for embedding inside `action="..."` in a zsh command.
-    ///
-    /// Wraps `osascript` in a bash watchdog: the script backgrounds osascript, then starts a
-    /// `(sleep 2 && kill -9 $pid)` subshell. If osascript hangs beyond 2 seconds it is forcibly
-    /// killed, preventing signal pile-up that makes the system unresponsive.
-    ///
-    /// Quoting chain: Swift literal → runtime string (zsh-escaped) → embedded in `action="..."` →
-    /// yabai stores the unescaped value → shell executes it → bash -c receives the script.
-    private var timedSignalAction: String {
-        "/bin/bash -c 'osascript -e \\\"tell application \\\\\\\"a-bar\\\\\\\" to refresh \\\\\\\"yabai\\\\\\\"\\\" & p=\\$!; (sleep 2 && kill -9 \\$p 2>/dev/null) & wait \\$p'"
+    /// Darwin notifications avoid an AppleScript process and watchdog per window event.
+    private var signalAction: String {
+        "/usr/bin/notifyutil -p \(refreshNotification)"
     }
 
-    /// Set up yabai signals to automatically refresh on window events
     private func setupYabaiSignals() {
-        Task {
+        updateSignals(register: true, path: yabaiPath)
+    }
+
+    private func updateSignals(register: Bool, path: String) {
+        let previous = signalTask
+        let generation = refreshGeneration
+        signalTask = Task { @MainActor in
+            await previous?.value
+            if !register {
+                for (_, label) in Self.signalEvents {
+                    _ = try? await ShellExecutor.run("\(path) -m signal --remove \(label)")
+                }
+                return
+            }
+            guard isStarted, generation == refreshGeneration else { return }
             do {
-
-                // Check if yabai is running by trying to list signals
-                let output = try await ShellExecutor.run("\(yabaiPath) -m signal --list")
-                let yabaiSignals = try JSONDecoder().decode([YabaiSignal].self, from: Data(output.utf8))
-
-                // Check if our signals are already registered
-                let hasDestroyedSignal = yabaiSignals.contains { $0.label == "abar-window-destroyed" }
-                let hasTitleSignal = yabaiSignals.contains { $0.label == "abar-window-title-changed" }
-                let hasFocusSignal = yabaiSignals.contains { $0.label == "abar-window-focused" }
-
-                if hasDestroyedSignal && hasTitleSignal && hasFocusSignal {
-                    await MainActor.run {
-                        self.signalsRegistered = true
-                    }
-                    return
+                let output = try await ShellExecutor.run("\(path) -m signal --list")
+                let signals = try JSONDecoder().decode([YabaiSignal].self, from: Data(output.utf8))
+                for (event, label) in Self.signalEvents {
+                    // Replace old AppleScript actions too, not just missing labels.
+                    if signals.contains(where: { $0.label == label && $0.action == signalAction }) { continue }
+                    try await ShellExecutor.run(
+                        "\(path) -m signal --add event=\(event) action=\"\(signalAction)\" label=\(label)")
                 }
-                
-                // Add signal for window destroyed
-                let destroyedCmd = "\(yabaiPath) -m signal --add event=window_destroyed action=\"\(timedSignalAction)\" label=\"abar-window-destroyed\""
-                try await ShellExecutor.run(destroyedCmd)
-
-                // Add signal for window title changed
-                let titleCmd = "\(yabaiPath) -m signal --add event=window_title_changed action=\"\(timedSignalAction)\" label=\"abar-window-title-changed\""
-                try await ShellExecutor.run(titleCmd)
-
-                // Add signal for window focus changed
-                let focusCmd = "\(yabaiPath) -m signal --add event=window_focused action=\"\(timedSignalAction)\" label=\"abar-window-focused\""
-                try await ShellExecutor.run(focusCmd)
-                
-                await MainActor.run {
-                    self.signalsRegistered = true
-                }
-                
+                guard isStarted, generation == refreshGeneration else { return }
+                if !signalsRegistered { signalsRegistered = true }
             } catch {
-                await MainActor.run {
-                    self.signalsRegistered = false
-                }
-                print("⚠️ Failed to register yabai signals: \(error)")
-                print("   yabai path: \(yabaiPath)")
-                print("   This is normal if yabai is not running. Will retry in 20 seconds.")
+                guard isStarted, generation == refreshGeneration else { return }
+                if signalsRegistered { signalsRegistered = false }
+                print("Failed to register yabai signals: \(error). Retrying in 20 seconds.")
             }
         }
     }
-    
-    /// Remove yabai signals registered by a-bar
-    private func removeYabaiSignals() async {
-        do {
-            _ = try? await ShellExecutor.run("\(yabaiPath) -m signal --remove abar-window-destroyed")
-            _ = try? await ShellExecutor.run("\(yabaiPath) -m signal --remove abar-window-title-changed")
-            _ = try? await ShellExecutor.run("\(yabaiPath) -m signal --remove abar-window-focused")
-        }
-    }
 
-    /// Manually refresh all yabai data
+    /// Refresh immediately, retaining one follow-up if events arrive during a query.
     func refresh() {
-        Task {
-            await refreshSpaces()
-            await refreshWindows()
-            await refreshDisplays()
+        let generation = refreshGeneration
+        Task { @MainActor in
+            guard generation == refreshGeneration else { return }
+            guard !isRefreshing else {
+                refreshPending = true
+                return
+            }
+            isRefreshing = true
+            repeat {
+                refreshPending = false
+                let path = yabaiPath
+                do {
+                    async let spaces: [YabaiSpace] = fetch("spaces", path: path)
+                    async let windows: [YabaiWindow] = fetch("windows", path: path)
+                    async let displays: [YabaiDisplay] = fetch("displays", path: path)
+                    var next = try await YabaiState(spaces: spaces, windows: windows, displays: displays)
+                    next.windows.removeAll { window in
+                        guard let subrole = window.subrole else { return true }
+                        return subrole.isEmpty || subrole == "AXDialog"
+                    }
+                    // A stopped service must not overwrite a newer generation's state or flags.
+                    guard generation == refreshGeneration else { return }
+                    if state != next { state = next }
+                    if !isConnected { isConnected = true }
+                    if lastError != nil { lastError = nil }
+                } catch {
+                    guard generation == refreshGeneration else { return }
+                    handleError(error)
+                }
+            } while refreshPending
+            isRefreshing = false
         }
     }
 
-    /// Debounced refresh to prevent overlapping events
-    private func debounceRefresh() {
-        refreshWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.refresh()
-        }
-        refreshWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + refreshDebounceInterval, execute: workItem)
-    }
-
-    /// Refresh spaces data
-    func refreshSpaces() async {
-        do {
-            let output = try await ShellExecutor.run("\(yabaiPath) -m query --spaces")
-            let cleanedOutput = cleanupJSON(output)
-            let spaces = try JSONDecoder().decode([YabaiSpace].self, from: Data(cleanedOutput.utf8))
-            await MainActor.run {
-                self.state.spaces = spaces
-                self.isConnected = true
-                self.lastError = nil
-            }
-        } catch {
-            await handleError(error)
-        }
-    }
-
-    /// Refresh windows data
-    func refreshWindows() async {
-        do {
-            let output = try await ShellExecutor.run("\(yabaiPath) -m query --windows")
-            let cleanedOutput = cleanupJSON(output)
-            let windows = try JSONDecoder().decode(
-                [YabaiWindow].self, from: Data(cleanedOutput.utf8))
-            // Filter out windows with empty subroles or AXDialog subrole
-            let filteredWindows = windows.filter { window in
-                guard let subrole = window.subrole else { return false }
-                return !subrole.isEmpty && subrole != "AXDialog"
-            }
-            await MainActor.run {
-                self.state.windows = filteredWindows
-                self.isConnected = true
-                self.lastError = nil
-            }
-        } catch {
-            await handleError(error)
-        }
-    }
-
-    /// Refresh displays data
-    func refreshDisplays() async {
-        do {
-            let output = try await ShellExecutor.run("\(yabaiPath) -m query --displays")
-            let cleanedOutput = cleanupJSON(output)
-            let displays = try JSONDecoder().decode([YabaiDisplay].self, from: Data(cleanedOutput.utf8))
-            await MainActor.run {
-                self.state.displays = displays
-                self.isConnected = true
-                self.lastError = nil
-            }
-        } catch {
-            await handleError(error)
-        }
+    /// Process I/O and decoding stay off the main actor.
+    private func fetch<T: Decodable>(_ collection: String, path: String) async throws -> T {
+        let output = try await ShellExecutor.run("\(path) -m query --\(collection)")
+        return try JSONDecoder().decode(T.self, from: Data(cleanupJSON(output).utf8))
     }
 
     /// Focus on a specific space

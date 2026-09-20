@@ -189,4 +189,17 @@ final class WidgetTypesTests: XCTestCase {
     XCTAssertTrue(stats.formattedUpload.hasSuffix("/s"))
     XCTAssertTrue(stats.formattedUpload.contains("MB"), "1 MiB should read in megabytes")
   }
+  func testSamplingDemandMatchesConnectedEnabledWidgetsAcrossBothBars() {
+    let layout = MultiDisplayLayout(displays: [
+      DisplayConfiguration(displayIndex: 0,
+        topBar: SingleBarLayout(left: [WidgetInstance(identifier: .cpu), WidgetInstance(identifier: .gpu, enabled: false)]),
+        bottomBar: SingleBarLayout(right: [WidgetInstance(identifier: .cpu), WidgetInstance(identifier: .sound)])),
+      DisplayConfiguration(displayIndex: 1,
+        topBar: SingleBarLayout(left: [WidgetInstance(identifier: .bluetooth)]))
+    ])
+    XCTAssertEqual(layout.enabledWidgets(displayCount: 1), [.cpu, .sound])
+    XCTAssertEqual(layout.enabledWidgets(displayCount: 2), [.cpu, .sound, .bluetooth])
+    XCTAssertTrue(layout.enabledWidgets(displayCount: 0).isEmpty)
+  }
+
 }

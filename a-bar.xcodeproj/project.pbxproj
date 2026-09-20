@@ -124,6 +124,8 @@
 		A1000304 /* YabaiStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000304 /* YabaiStateTests.swift */; };
 		A1000305 /* FormattingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000305 /* FormattingTests.swift */; };
 		A1000306 /* ShellExecutorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000306 /* ShellExecutorTests.swift */; };
+		A1000318 /* YabaiServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000318 /* YabaiServiceTests.swift */; };
+		A1000232 /* YabaiService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000020 /* YabaiService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -226,6 +228,7 @@
 		B1000306 /* ShellExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ShellExecutorTests.swift"; sourceTree = "<group>"; };
 		B1000307 /* XBarParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "XBarParserTests.swift"; sourceTree = "<group>"; };
 		D1000002 /* a-barTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "a-barTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B1000318 /* YabaiServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YabaiServiceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -462,6 +465,7 @@
 				B1000302 /* AerospaceDecodingTests.swift */,
 				B1000303 /* ThemeColorTests.swift */,
 				B1000304 /* YabaiStateTests.swift */,
+				B1000318 /* YabaiServiceTests.swift */,
 				B1000305 /* FormattingTests.swift */,
 				B1000306 /* ShellExecutorTests.swift */,
 				B1000307 /* XBarParserTests.swift */,
@@ -653,6 +657,8 @@
 				A1000302 /* AerospaceDecodingTests.swift in Sources */,
 				A1000303 /* ThemeColorTests.swift in Sources */,
 				A1000304 /* YabaiStateTests.swift in Sources */,
+				A1000318 /* YabaiServiceTests.swift in Sources */,
+				A1000232 /* YabaiService.swift in Sources */,
 				A1000305 /* FormattingTests.swift in Sources */,
 				A1000306 /* ShellExecutorTests.swift in Sources */,
 				A1000307 /* XBarParserTests.swift in Sources */,

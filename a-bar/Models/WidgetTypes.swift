@@ -282,6 +282,16 @@ struct MultiDisplayLayout: Codable, Equatable {
     }
   }
 
+  /// Match the widgets rendered on connected screens; one sampler serves all copies.
+  func enabledWidgets(displayCount: Int) -> Set<WidgetIdentifier> {
+    Set((0..<max(0, displayCount)).flatMap { index -> [WidgetIdentifier] in
+      guard let display = configuration(forDisplay: index) else { return [] }
+      return [display.topBar, display.bottomBar].compactMap { $0 }.flatMap { bar in
+        (bar.left + bar.center + bar.right).filter { $0.enabled }.map { $0.identifier }
+      }
+    })
+  }
+
   /// Update or add a display configuration
   mutating func setConfiguration(_ config: DisplayConfiguration, forDisplay index: Int) {
     if let existingIndex = displays.firstIndex(where: { $0.displayIndex == index }) {
