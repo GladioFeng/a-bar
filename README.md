@@ -1,5 +1,9 @@
 # <img src="./images/a-bar-logo.png" width="200" alt="a-bar" />
 
+[![Version](https://raw.githubusercontent.com/Jean-Tinland/a-bar/badges/version.svg)](https://github.com/Jean-Tinland/a-bar/releases/latest)
+[![Tests](https://github.com/Jean-Tinland/a-bar/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/Jean-Tinland/a-bar/actions/workflows/tests.yml)
+[![Coverage](https://raw.githubusercontent.com/Jean-Tinland/a-bar/badges/coverage.svg)](https://github.com/Jean-Tinland/a-bar/actions/workflows/tests.yml)
+
 Yet **a(nother) bar** :)
 
 A native macOS menu bar replacement inspired by [simple-bar](https://github.com/Jean-Tinland/simple-bar), built with Swift and SwiftUI. It is a standalone recreation of simple-bar with a focus on performance, stability, and extensibility.

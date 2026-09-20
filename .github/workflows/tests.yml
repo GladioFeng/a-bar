@@ -3,7 +3,11 @@ name: Tests
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
+
+permissions:
+  contents: read
 
 concurrency:
   group: tests-${{ github.ref }}
@@ -16,6 +20,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # A test file missing from the target runs nothing and still reports
       # success, so check membership before trusting a green suite.
@@ -30,4 +36,44 @@ jobs:
             -project a-bar.xcodeproj \
             -scheme a-bar \
             -destination 'platform=macOS' \
+            -enableCodeCoverage YES \
+            -resultBundlePath "$RUNNER_TEMP/TestResults.xcresult" \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Generate badges
+        if: github.event_name == 'push'
+        run: ./scripts/generate-badges.sh "$RUNNER_TEMP/TestResults.xcresult" "$RUNNER_TEMP/badges"
+
+      - name: Save badges
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: badges
+          path: ${{ runner.temp }}/badges/*.svg
+
+  publish-badges:
+    name: Publish badges
+    if: github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: badges
+          path: ${{ runner.temp }}/badges
+
+      - name: Publish badges
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git checkout --orphan badges
+          git rm -rf .
+          cp "$RUNNER_TEMP/badges/"*.svg .
+          git add coverage.svg version.svg
+          git commit -m "Update README badges"
+          git push --force origin badges
