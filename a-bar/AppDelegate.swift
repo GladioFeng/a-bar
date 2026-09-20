@@ -2,12 +2,6 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// Key for identifying a bar window by display index and position
-struct BarWindowKey: Hashable {
-  let displayIndex: Int
-  let position: BarPosition
-}
-
 /// Main application delegate handling bar windows, services, and menu bar setup
 class AppDelegate: NSObject, NSApplicationDelegate {
 
@@ -23,6 +17,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   /// Last value applied to the login item, so unrelated settings changes cannot thrash
   /// SMAppService - or unregister what the user just enabled.
   private var appliedLaunchAtLogin: Bool?
+
+  /// The window manager whose service is running, for the same reason.
+  private var runningWindowManager: WindowManager?
 
   /// Settings manager
   let settingsManager = SettingsManager.shared
@@ -110,6 +107,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     barWindows.values.forEach { $0.close() }
     yabaiService.stop()
     aerospaceService.stop()
+    runningWindowManager = nil
   }
 
   private func setupStatusItem() {
@@ -209,40 +207,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     barWindows.values.forEach { $0.close() }
     barWindows.removeAll()
 
-    guard settingsManager.settings.global.barEnabled else { return }
-
     let screens = NSScreen.screens
-    let layout = layoutManager.multiDisplayLayout
+    let plan = BarWindowPlan.windows(
+      screenCount: screens.count,
+      layout: layoutManager.multiDisplayLayout,
+      barEnabled: settingsManager.settings.global.barEnabled
+    )
 
-    // Create bar windows on each screen based on layout configuration
-    for (displayIndex, screen) in screens.enumerated() {
-      guard let displayConfig = layout.configuration(forDisplay: displayIndex) else {
-        continue  // No configuration for this display
-      }
-
-      // Create top bar if configured
-      if displayConfig.topBar != nil {
-        let key = BarWindowKey(displayIndex: displayIndex, position: .top)
-        let barWindow = BarWindow(
-          screen: screen,
-          displayIndex: displayIndex,
-          position: .top
-        )
-        barWindows[key] = barWindow
-        barWindow.makeKeyAndOrderFront(nil)
-      }
-
-      // Create bottom bar if configured
-      if displayConfig.bottomBar != nil {
-        let key = BarWindowKey(displayIndex: displayIndex, position: .bottom)
-        let barWindow = BarWindow(
-          screen: screen,
-          displayIndex: displayIndex,
-          position: .bottom
-        )
-        barWindows[key] = barWindow
-        barWindow.makeKeyAndOrderFront(nil)
-      }
+    // The plan only names displays that are attached, so the index is safe to subscript with.
+    for key in plan {
+      let barWindow = BarWindow(
+        screen: screens[key.displayIndex],
+        displayIndex: key.displayIndex,
+        position: key.position
+      )
+      barWindows[key] = barWindow
+      barWindow.makeKeyAndOrderFront(nil)
     }
   }
   
@@ -258,20 +238,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func startServices() {
-    // Start the appropriate window manager service based on settings
-    let windowManager = settingsManager.settings.global.windowManager
+    applyWindowManager(settingsManager.settings.global.windowManager)
+  }
+
+  /// The only place that maps a `WindowManager` onto the service that implements it.
+  private func setWindowManager(_ windowManager: WindowManager, running: Bool) {
     switch windowManager {
     case .yabai:
-      yabaiService.start()
+      running ? yabaiService.start() : yabaiService.stop()
     case .aerospace:
-      aerospaceService.start()
+      running ? aerospaceService.start() : aerospaceService.stop()
     }
   }
 
   private var visibleWidgets: Set<WidgetIdentifier> {
-    settingsManager.settings.global.barEnabled
-      ? layoutManager.multiDisplayLayout.enabledWidgets(displayCount: NSScreen.screens.count)
-      : []
+    BarWindowPlan.visibleWidgets(
+      screenCount: NSScreen.screens.count,
+      layout: layoutManager.multiDisplayLayout,
+      barEnabled: settingsManager.settings.global.barEnabled
+    )
   }
 
   /// Hidden widgets must not poll or initialize blocking hardware APIs.
@@ -307,47 +292,51 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     setupBarWindows()
 
     // Restart window manager services if the WM changed
-    restartWindowManagerServices(settings.global.windowManager)
+    applyWindowManager(settings.global.windowManager)
 
     // Update launch at login
     applyLaunchAtLogin(settings.global.launchAtLogin)
   }
 
-  /// Restart window manager services based on the selected WM
-  private func restartWindowManagerServices(_ windowManager: WindowManager) {
-    switch windowManager {
-    case .yabai:
-      aerospaceService.stop()
-      yabaiService.start()
-    case .aerospace:
-      yabaiService.stop()
-      aerospaceService.start()
-    }
+  /// Switch window manager services, but only when the window manager actually changed.
+  private func applyWindowManager(_ windowManager: WindowManager) {
+    guard
+      let transition = WindowManagerServices.transition(
+        to: windowManager, from: runningWindowManager)
+    else { return }
+
+    if let stop = transition.stop { setWindowManager(stop, running: false) }
+    setWindowManager(transition.start, running: true)
+    runningWindowManager = transition.start
   }
 
   /// macOS owns the login item: the user can remove it in System Settings without the app
   /// hearing about it, so adopt what it reports instead of forcing the stored value back on.
   private func reconcileLaunchAtLogin() {
-    let registered = LaunchAtLogin.isEnabled
-    appliedLaunchAtLogin = registered
+    let adoption = LaunchAtLoginReconciler.adopt(
+      registered: LaunchAtLogin.isEnabled,
+      stored: settingsManager.settings.global.launchAtLogin
+    )
+    appliedLaunchAtLogin = adoption.lastApplied
 
-    if settingsManager.settings.global.launchAtLogin != registered {
-      settingsManager.update { $0.global.launchAtLogin = registered }
+    if let setting = adoption.settingToWrite {
+      settingsManager.update { $0.global.launchAtLogin = setting }
     }
   }
 
   /// Apply the setting only when it actually changed. Reacting to every settings change is
   /// what used to unregister the login item the moment any other setting was saved.
   private func applyLaunchAtLogin(_ enabled: Bool) {
-    guard appliedLaunchAtLogin != enabled else { return }
-    appliedLaunchAtLogin = enabled
+    let outcome = LaunchAtLoginReconciler.apply(
+      enabled,
+      lastApplied: appliedLaunchAtLogin,
+      setEnabled: LaunchAtLogin.setEnabled
+    )
 
-    do {
-      try LaunchAtLogin.setEnabled(enabled)
-    } catch {
-      print("⚠️ a-bar: failed to update launch at login: \(error.localizedDescription)")
-      appliedLaunchAtLogin = nil
+    if case .failed(_, let message) = outcome {
+      print("⚠️ a-bar: failed to update launch at login: \(message)")
     }
+    appliedLaunchAtLogin = outcome.lastApplied
   }
 
   // Open the preferences window, creating it if it doesn't exist

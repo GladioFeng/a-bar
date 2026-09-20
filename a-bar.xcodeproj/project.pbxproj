@@ -88,6 +88,9 @@
 		A1000129 /* BluetoothTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000129 /* BluetoothTypes.swift */; };
 		A1000130 /* WifiTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000130 /* WifiTypes.swift */; };
 		A1000131 /* WindowFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000131 /* WindowFilter.swift */; };
+		A1000132 /* LaunchAtLoginReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000132 /* LaunchAtLoginReconciler.swift */; };
+		A1000133 /* BarWindowPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000133 /* BarWindowPlan.swift */; };
+		A1000134 /* WindowManagerServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000134 /* WindowManagerServices.swift */; };
 		A1000225 /* ThemeColorRole.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000114 /* ThemeColorRole.swift */; };
 		A1000226 /* WidgetPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000115 /* WidgetPalette.swift */; };
 		A1000227 /* VolumeLevel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000116 /* VolumeLevel.swift */; };
@@ -106,6 +109,9 @@
 		A1000242 /* BluetoothTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000129 /* BluetoothTypes.swift */; };
 		A1000243 /* WifiTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000130 /* WifiTypes.swift */; };
 		A1000244 /* WindowFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000131 /* WindowFilter.swift */; };
+		A1000245 /* LaunchAtLoginReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000132 /* LaunchAtLoginReconciler.swift */; };
+		A1000246 /* BarWindowPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000133 /* BarWindowPlan.swift */; };
+		A1000247 /* WindowManagerServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000134 /* WindowManagerServices.swift */; };
 		A1000312 /* WidgetPaletteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000312 /* WidgetPaletteTests.swift */; };
 		A1000313 /* VolumeLevelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000313 /* VolumeLevelTests.swift */; };
 		A1000314 /* WidgetLabelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000314 /* WidgetLabelsTests.swift */; };
@@ -159,6 +165,9 @@
 		A1000326 /* CaffeinateOptionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000326 /* CaffeinateOptionsTests.swift */; };
 		A1000327 /* NetworkInterfacesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000327 /* NetworkInterfacesTests.swift */; };
 		A1000328 /* WindowFilterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000328 /* WindowFilterTests.swift */; };
+		A1000329 /* LaunchAtLoginReconcilerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000329 /* LaunchAtLoginReconcilerTests.swift */; };
+		A1000330 /* BarWindowPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000330 /* BarWindowPlanTests.swift */; };
+		A1000331 /* WindowManagerServicesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000331 /* WindowManagerServicesTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -243,6 +252,9 @@
 		B1000129 /* BluetoothTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BluetoothTypes.swift"; sourceTree = "<group>"; };
 		B1000130 /* WifiTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WifiTypes.swift"; sourceTree = "<group>"; };
 		B1000131 /* WindowFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WindowFilter.swift"; sourceTree = "<group>"; };
+		B1000132 /* LaunchAtLoginReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LaunchAtLoginReconciler.swift"; sourceTree = "<group>"; };
+		B1000133 /* BarWindowPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BarWindowPlan.swift"; sourceTree = "<group>"; };
+		B1000134 /* WindowManagerServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WindowManagerServices.swift"; sourceTree = "<group>"; };
 		B1000312 /* WidgetPaletteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetPaletteTests.swift"; sourceTree = "<group>"; };
 		B1000313 /* VolumeLevelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "VolumeLevelTests.swift"; sourceTree = "<group>"; };
 		B1000314 /* WidgetLabelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetLabelsTests.swift"; sourceTree = "<group>"; };
@@ -283,6 +295,9 @@
 		B1000326 /* CaffeinateOptionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaffeinateOptionsTests.swift; sourceTree = "<group>"; };
 		B1000327 /* NetworkInterfacesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkInterfacesTests.swift; sourceTree = "<group>"; };
 		B1000328 /* WindowFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowFilterTests.swift; sourceTree = "<group>"; };
+		B1000329 /* LaunchAtLoginReconcilerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginReconcilerTests.swift; sourceTree = "<group>"; };
+		B1000330 /* BarWindowPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarWindowPlanTests.swift; sourceTree = "<group>"; };
+		B1000331 /* WindowManagerServicesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowManagerServicesTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -504,6 +519,9 @@
 				B1000126 /* WifiScan.swift */,
 				B1000127 /* AerospaceMerge.swift */,
 				B1000131 /* WindowFilter.swift */,
+				B1000132 /* LaunchAtLoginReconciler.swift */,
+				B1000133 /* BarWindowPlan.swift */,
+				B1000134 /* WindowManagerServices.swift */,
 			);
 			path = Logic;
 			sourceTree = "<group>";
@@ -554,6 +572,9 @@
 				B1000316 /* GraphGeometryTests.swift */,
 				B1000317 /* BarGeometryTests.swift */,
 				B1000328 /* WindowFilterTests.swift */,
+				B1000329 /* LaunchAtLoginReconcilerTests.swift */,
+				B1000330 /* BarWindowPlanTests.swift */,
+				B1000331 /* WindowManagerServicesTests.swift */,
 			);
 			path = "a-barTests";
 			sourceTree = "<group>";
@@ -726,6 +747,9 @@
 				A1000129 /* BluetoothTypes.swift in Sources */,
 				A1000130 /* WifiTypes.swift in Sources */,
 				A1000131 /* WindowFilter.swift in Sources */,
+				A1000132 /* LaunchAtLoginReconciler.swift in Sources */,
+				A1000133 /* BarWindowPlan.swift in Sources */,
+				A1000134 /* WindowManagerServices.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -802,6 +826,12 @@
 				A1000243 /* WifiTypes.swift in Sources */,
 				A1000244 /* WindowFilter.swift in Sources */,
 				A1000328 /* WindowFilterTests.swift in Sources */,
+				A1000245 /* LaunchAtLoginReconciler.swift in Sources */,
+				A1000246 /* BarWindowPlan.swift in Sources */,
+				A1000247 /* WindowManagerServices.swift in Sources */,
+				A1000329 /* LaunchAtLoginReconcilerTests.swift in Sources */,
+				A1000330 /* BarWindowPlanTests.swift in Sources */,
+				A1000331 /* WindowManagerServicesTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
