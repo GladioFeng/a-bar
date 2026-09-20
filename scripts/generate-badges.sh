@@ -31,15 +31,35 @@ if not raw.strip():
 report = json.loads(raw)
 files = report[0]["files"] if isinstance(report, list) else report["files"]
 
-executable = covered = 0
+
+def is_view(path):
+    # Matched against the absolute path, anchored on the app source directory. Splitting on
+    # a repo-relative prefix does not work: a GitHub runner checks the repo out at
+    # /Users/runner/work/a-bar/a-bar, so "a-bar/a-bar/" appears twice and the first match is
+    # the checkout directory, not the sources. That silently excluded nothing and made this
+    # badge reprint the overall number.
+    return (
+        "/a-bar/Views/" in path
+        or "/a-bar/Widgets/" in path
+        or path.endswith("/a-bar/BarView.swift")
+    )
+
+
+executable = covered = excluded = 0
 for entry in files:
-    path = entry["path"].split("/a-bar/a-bar/", 1)[-1]
-    if path.startswith(("Views/", "Widgets/")) or path == "BarView.swift":
+    if is_view(entry["path"]):
+        excluded += 1
         continue
     executable += entry["executableLines"]
     covered += entry["coveredLines"]
 
 if executable == 0:
+    print("no non-view sources found in the coverage report", file=sys.stderr)
+    sys.exit(1)
+if excluded == 0:
+    # Every source matched as non-view, which means the paths are not shaped as expected and
+    # this number would be identical to the overall one. Fail rather than publish a duplicate.
+    print("no view sources were excluded - path matching is wrong", file=sys.stderr)
     sys.exit(1)
 print("%.1f" % (100.0 * covered / executable))
 ')"
@@ -87,6 +107,6 @@ color_for() {
   }'
 }
 
-badge "version" "$version" "#007ec6" "version.svg"
-badge "coverage" "$coverage%" "$(color_for "$coverage")" "coverage.svg"
-badge "logic coverage" "$logic_coverage%" "$(color_for "$logic_coverage")" "logic.svg"
+badge "Version" "$version" "#007ec6" "version.svg"
+badge "Coverage" "$coverage%" "$(color_for "$coverage")" "coverage.svg"
+badge "Logic coverage" "$logic_coverage%" "$(color_for "$logic_coverage")" "logic.svg"
