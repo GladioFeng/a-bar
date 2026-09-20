@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 _No unreleased changes_
 
+## v1.5.1 - 2026-09-20
+
+- fix: declare NSBluetoothAlwaysUsageDescription so the app no longer crashes at launch on macOS
+
 ## v1.5.0 - 2026-09-19
 
 - feat: add bluetooth widget with paired devices popover, battery levels and power toggle

@@ -39,6 +39,9 @@
 		<key>NSCalendarsUsageDescription</key>
 		<string>a-bar widgets need access to your calendar only in order to allow custom widgets to
 			retrieve information if necessary.</string>
+		<key>NSBluetoothAlwaysUsageDescription</key>
+		<string>a-bar needs Bluetooth access to show the power state of your paired devices,
+			their connection status and their battery levels in the bar.</string>
 		<key>NSAppleScriptEnabled</key>
 		<true />
 		<key>OSAScriptingDefinition</key>
