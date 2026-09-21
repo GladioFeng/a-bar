@@ -252,7 +252,10 @@ class YabaiService: ObservableObject {
     /// Process I/O and decoding stay off the main actor.
     private func fetch<T: Decodable>(_ collection: String, path: String) async throws -> T {
         let output = try await ShellExecutor.run(executable: path, arguments: ["-m", "query", "--\(collection)"])
-        return try JSONDecoder().decode(
+        let decoder = JSONDecoder()
+        // Valid output needs no repair and must retain its literal string values.
+        if let value = try? decoder.decode(T.self, from: Data(output.utf8)) { return value }
+        return try decoder.decode(
             T.self, from: Data(YabaiJSONSanitizer.sanitize(output).utf8))
     }
 

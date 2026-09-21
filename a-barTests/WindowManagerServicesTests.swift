@@ -55,6 +55,20 @@ final class WindowManagerServicesTests: XCTestCase {
 
   // MARK: - An unrelated settings change
 
+  func testChangingTheExecutableRestartsTheSelectedService() {
+    for manager in WindowManager.allCases {
+      XCTAssertEqual(
+        WindowManagerServices.transition(
+          to: manager, from: manager,
+          executablePath: "/new/tool", runningExecutablePath: "/old/tool"),
+        .init(start: manager, stop: manager))
+      XCTAssertNil(
+        WindowManagerServices.transition(
+          to: manager, from: manager,
+          executablePath: "/new/tool", runningExecutablePath: "/new/tool"))
+    }
+  }
+
   func testSavingAnUnrelatedSettingDoesNotRestartTheService() {
     // Every settings change arrives here, not just a change of window manager. Restarting on
     // each one meant AerospaceService.start() re-registering its six NSWorkspace observers

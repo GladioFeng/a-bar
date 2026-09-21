@@ -13,11 +13,11 @@ import IOBluetooth
 ///   all. Polled lazily — while the popover is open, or shortly after a
 ///   connection change — so an idle bar never forks a process.
 ///
-/// Threading: every IOBluetooth object access happens on the main thread.
+/// Threading: snapshots and notifications stay on the main thread.
 /// `IOBluetoothUserNotification` callbacks are delivered on the run loop of the
 /// registering thread, and a GCD worker queue has no run loop, so registering
-/// off-main means callbacks silently never fire. Only the blocking
-/// `openConnection()` / `closeConnection()` calls run on `workQueue`.
+/// off-main means callbacks silently never fire. Controller initialization and
+/// blocking `openConnection()` / `closeConnection()` calls run on `workQueue`.
 final class BluetoothService: ObservableObject {
   static let shared = BluetoothService()
 
@@ -36,9 +36,12 @@ final class BluetoothService: ObservableObject {
   private var isPopoverOpen = false
   private var isFetchingBattery = false
   private var isStarted = false
+  private(set) var isControllerInitialized = false
+  private var isInitializingController = false
   private var refreshGeneration = 0
 
   private let settingsManager: SettingsManager
+  private let initializeController: () -> Void
   private let workQueue = DispatchQueue(label: "com.a-bar.bluetooth", qos: .userInitiated)
 
   private lazy var observer = BluetoothNotificationObserver { [weak self] in
@@ -49,17 +52,37 @@ final class BluetoothService: ObservableObject {
     settingsManager.settings.widgets.bluetooth
   }
 
-  init(settingsManager: SettingsManager = .shared) {
+  init(
+    settingsManager: SettingsManager = .shared,
+    initializeController: @escaping () -> Void = { _ = IOBluetoothHostController.default() }
+  ) {
     self.settingsManager = settingsManager
+    self.initializeController = initializeController
   }
 
   // MARK: - Lifecycle
 
   func start() {
-    let wasStarted = isStarted
     isStarted = true
+    guard isControllerInitialized else {
+      guard !isInitializingController else { return }
+      isInitializingController = true
+      let initialize = initializeController
+      // The first call can wait for CoreBluetooth indefinitely. Never hold the UI
+      // run loop while it initializes; every hardware entry point waits for completion.
+      workQueue.async { [weak self] in
+        initialize()
+        DispatchQueue.main.async {
+          guard let self else { return }
+          self.isInitializingController = false
+          self.isControllerInitialized = true
+          if self.isStarted { self.start() }
+        }
+      }
+      return
+    }
     refreshDevices()
-    if !wasStarted { registerConnectNotification() }
+    if connectNotification == nil { registerConnectNotification() }
     startTimers()
   }
 
@@ -106,7 +129,7 @@ final class BluetoothService: ObservableObject {
   /// Read power state and the paired device list straight from IOBluetooth.
   /// Cheap enough to run on the main thread; `system_profiler` is not.
   func refreshDevices() {
-    guard isStarted else { return }
+    guard isStarted, isControllerInitialized else { return }
     var next = BluetoothInfo()
     next.canTogglePower = BluetoothService.setPowerState != nil
 
@@ -247,6 +270,7 @@ final class BluetoothService: ObservableObject {
   }()
 
   func togglePower() {
+    guard isStarted, isControllerInitialized else { return }
     guard let setPowerState = BluetoothService.setPowerState else {
       openBluetoothSettings()
       return
@@ -268,6 +292,7 @@ final class BluetoothService: ObservableObject {
   /// is re-resolved by address on the worker queue (IOBluetooth vends a single
   /// instance per address) so main-thread objects are never touched off-main.
   func toggleConnection(for device: BluetoothPairedDevice) {
+    guard isStarted, isControllerInitialized else { return }
     guard !pendingAddresses.contains(device.id) else { return }
     let address = device.address
     let id = device.id

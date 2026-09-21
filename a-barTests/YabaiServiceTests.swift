@@ -119,6 +119,29 @@ final class YabaiServiceTests: XCTestCase {
     }
 
     @MainActor
+    func testValidJSONPreservesCombiningMarksAndLiteralRepairPatterns() async throws {
+        let title = "\u{301}[,] 00000 \"quoted\" \\path\nnext"
+        let data = try Data(contentsOf: directory.appendingPathComponent("--windows.json"))
+        var windows = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        windows[0]["title"] = title
+        let output = try JSONSerialization.data(withJSONObject: windows)
+        try write("--windows.json", String(decoding: output, as: UTF8.self))
+        service.refresh()
+        await waitFor { service.isConnected }
+        XCTAssertEqual(service.state.windows.first?.title, title)
+    }
+
+    @MainActor
+    func testMalformedLegacyArraysStillUseTheSanitizer() async throws {
+        let output = try String(contentsOf: directory.appendingPathComponent("--windows.json"), encoding: .utf8)
+        try write("--windows.json", "[," + output.dropFirst().dropLast() + ",]")
+        service.refresh()
+        await waitFor { service.isConnected }
+        XCTAssertEqual(service.state.windows.count, 1)
+        XCTAssertEqual(service.state.windows.first?.title, "Example")
+    }
+
+    @MainActor
     func testStoppedGenerationCannotPublishItsResult() async throws {
         try write("hold", "")
         service.refresh()

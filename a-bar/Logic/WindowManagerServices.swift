@@ -22,10 +22,13 @@ enum WindowManagerServices {
   /// `AerospaceService.start()` re-registering its six `NSWorkspace` observers without ever
   /// dropping the previous set, so every settings save permanently added another round of
   /// `aerospace list-windows` to every app switch for the rest of the session.
-  static func transition(to windowManager: WindowManager, from running: WindowManager?)
+  static func transition(
+    to windowManager: WindowManager, from running: WindowManager?,
+    executablePath: String? = nil, runningExecutablePath: String? = nil
+  )
     -> Transition?
   {
-    guard running != windowManager else { return nil }
+    guard running != windowManager || executablePath != runningExecutablePath else { return nil }
     return Transition(start: windowManager, stop: running)
   }
 }

@@ -20,6 +20,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// The window manager whose service is running, for the same reason.
   private var runningWindowManager: WindowManager?
+  private var runningWindowManagerPath: String?
 
   /// Settings manager
   let settingsManager = SettingsManager.shared
@@ -108,6 +109,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     yabaiService.stop()
     aerospaceService.stop()
     runningWindowManager = nil
+    runningWindowManagerPath = nil
   }
 
   private func setupStatusItem() {
@@ -298,16 +300,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     applyLaunchAtLogin(settings.global.launchAtLogin)
   }
 
-  /// Switch window manager services, but only when the window manager actually changed.
+  /// Restart only when the selected service or its executable changed.
   private func applyWindowManager(_ windowManager: WindowManager) {
+    let global = settingsManager.settings.global
+    let path = windowManager == .yabai ? global.yabaiPath : global.aerospacePath
     guard
       let transition = WindowManagerServices.transition(
-        to: windowManager, from: runningWindowManager)
+        to: windowManager, from: runningWindowManager,
+        executablePath: path, runningExecutablePath: runningWindowManagerPath)
     else { return }
 
     if let stop = transition.stop { setWindowManager(stop, running: false) }
     setWindowManager(transition.start, running: true)
     runningWindowManager = transition.start
+    runningWindowManagerPath = path
   }
 
   /// macOS owns the login item: the user can remove it in System Settings without the app

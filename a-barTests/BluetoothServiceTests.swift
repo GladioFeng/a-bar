@@ -160,6 +160,38 @@ final class BluetoothServiceTests: XCTestCase {
 
     // MARK: - The guard in front of the framework
 
+    func testSlowControllerInitializationDoesNotBlockOrRestartAfterStop() {
+        let entered = expectation(description: "controller initialization runs off main")
+        let completed = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in self.service.isControllerInitialized }, object: nil)
+        let release = DispatchSemaphore(value: 0)
+        var initializationCount = 0
+        service = BluetoothService(settingsManager: manager, initializeController: {
+            XCTAssertFalse(Thread.isMainThread)
+            initializationCount += 1
+            entered.fulfill()
+            XCTAssertEqual(release.wait(timeout: .now() + 3), .success)
+        })
+        defer { release.signal() }
+
+        service.start()
+        service.start()
+        service.refreshDevices()
+        service.setPopoverOpen(true)
+        service.togglePower()
+        wait(for: [entered], timeout: 1)
+        service.stop()
+        release.signal()
+        // Predicate expectations poll periodically; allow more than one poll interval.
+        wait(for: [completed], timeout: 3)
+
+        XCTAssertTrue(service.isControllerInitialized)
+        XCTAssertEqual(initializationCount, 1)
+        XCTAssertEqual(service.info, BluetoothInfo())
+        service.refreshDevices()
+        XCTAssertEqual(service.info, BluetoothInfo(), "completion must not restart a stopped service")
+    }
+
     func testRefreshingBeforeStartPublishesNothing() {
         service.refreshDevices()
 
