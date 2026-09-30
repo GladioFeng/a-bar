@@ -224,10 +224,7 @@ struct WeatherSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Refresh interval")
-            TextField(
-              "", value: binding(\.widgets.weather.refreshInterval),
-              formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.weather.refreshInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -329,9 +326,7 @@ struct NetworkSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Scan interval")
-            TextField(
-              "", value: binding(\.widgets.wifi.scanInterval), formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.wifi.scanInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -362,9 +357,7 @@ struct NetworkSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Refresh interval")
-            TextField(
-              "", value: binding(\.widgets.bluetooth.refreshInterval), formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.bluetooth.refreshInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -372,10 +365,7 @@ struct NetworkSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Battery refresh interval")
-            TextField(
-              "", value: binding(\.widgets.bluetooth.batteryRefreshInterval),
-              formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.bluetooth.batteryRefreshInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -409,9 +399,7 @@ struct AudioSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Refresh interval")
-            TextField(
-              "", value: binding(\.widgets.sound.refreshInterval), formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.sound.refreshInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -435,9 +423,7 @@ struct AudioSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Refresh interval")
-            TextField(
-              "", value: binding(\.widgets.mic.refreshInterval), formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.mic.refreshInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -461,9 +447,7 @@ struct AudioSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Refresh interval")
-            TextField(
-              "", value: binding(\.widgets.keyboard.refreshInterval), formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.keyboard.refreshInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -497,9 +481,7 @@ struct SystemStatsSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Refresh interval")
-            TextField(
-              "", value: binding(\.widgets.cpu.refreshInterval), formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.cpu.refreshInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -533,9 +515,7 @@ struct SystemStatsSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Refresh interval")
-            TextField(
-              "", value: binding(\.widgets.memory.refreshInterval), formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.memory.refreshInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -562,9 +542,7 @@ struct SystemStatsSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Refresh interval")
-            TextField(
-              "", value: binding(\.widgets.gpu.refreshInterval), formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.gpu.refreshInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -587,9 +565,7 @@ struct SystemStatsSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Refresh interval")
-            TextField(
-              "", value: binding(\.widgets.storage.refreshInterval), formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.storage.refreshInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -605,9 +581,7 @@ struct SystemStatsSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Refresh interval")
-            TextField(
-              "", value: binding(\.widgets.netstats.refreshInterval), formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.netstats.refreshInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -639,9 +613,7 @@ struct SystemStatsSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Refresh interval")
-            TextField(
-              "", value: binding(\.widgets.diskActivity.refreshInterval), formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.diskActivity.refreshInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -711,10 +683,7 @@ struct GitHubSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Refresh interval")
-            TextField(
-              "", value: binding(\.widgets.github.refreshInterval),
-              formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.github.refreshInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -740,10 +709,7 @@ struct HackerNewsSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Max title length")
-            TextField(
-              "", value: binding(\.widgets.hackerNews.maxTitleLength),
-              formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.hackerNews.maxTitleLength))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("characters")
@@ -751,10 +717,7 @@ struct HackerNewsSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Refresh interval")
-            TextField(
-              "", value: binding(\.widgets.hackerNews.refreshInterval),
-              formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.hackerNews.refreshInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -762,10 +725,7 @@ struct HackerNewsSettingsView: View, ABarSettingsBindable {
 
           HStack(spacing: 4) {
             Text("Rotation interval")
-            TextField(
-              "", value: binding(\.widgets.hackerNews.rotationInterval),
-              formatter: NumberFormatter()
-            )
+            SettingsNumberField(value: binding(\.widgets.hackerNews.rotationInterval))
             .frame(width: 60)
             .textFieldStyle(RoundedBorderTextFieldStyle())
             Text("seconds")
@@ -1079,7 +1039,7 @@ struct CustomWidgetEditorView: View {
                   .font(.caption)
                   .foregroundColor(.secondary)
                 Spacer()
-                TextField("", value: $refreshInterval, formatter: NumberFormatter())
+                SettingsNumberField(value: $refreshInterval)
                   .frame(width: 60)
                   .textFieldStyle(RoundedBorderTextFieldStyle())
                   .multilineTextAlignment(.trailing)
@@ -1093,7 +1053,7 @@ struct CustomWidgetEditorView: View {
                   .font(.caption)
                   .foregroundColor(.secondary)
                 Spacer()
-                TextField("", value: $cycleDuration, formatter: NumberFormatter())
+                SettingsNumberField(value: $cycleDuration)
                   .frame(width: 60)
                   .textFieldStyle(RoundedBorderTextFieldStyle())
                   .multilineTextAlignment(.trailing)

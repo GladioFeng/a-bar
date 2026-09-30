@@ -17,7 +17,7 @@ struct AppearanceSettingsView: View, ABarSettingsBindable {
             HStack {
               Text("Bar height")
               Spacer()
-              TextField("", value: binding(\.global.barHeight), formatter: NumberFormatter())
+              SettingsNumberField(value: binding(\.global.barHeight))
                 .frame(width: 60)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
               Text("px")
@@ -26,7 +26,7 @@ struct AppearanceSettingsView: View, ABarSettingsBindable {
             HStack {
               Text("Bar horizontal padding")
               Spacer()
-              TextField("", value: binding(\.global.barHorizontalPadding), formatter: NumberFormatter())
+              SettingsNumberField(value: binding(\.global.barHorizontalPadding))
                 .frame(width: 60)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
               Text("px")
@@ -35,7 +35,7 @@ struct AppearanceSettingsView: View, ABarSettingsBindable {
             HStack {
               Text("Bar vertical padding")
               Spacer()
-              TextField("", value: binding(\.global.barVerticalPadding), formatter: NumberFormatter())
+              SettingsNumberField(value: binding(\.global.barVerticalPadding))
                 .frame(width: 60)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
               Text("px")
@@ -44,7 +44,7 @@ struct AppearanceSettingsView: View, ABarSettingsBindable {
             HStack {
               Text("Bar distance from edges")
               Spacer()
-              TextField("", value: binding(\.global.barDistanceFromEdges), formatter: NumberFormatter())
+              SettingsNumberField(value: binding(\.global.barDistanceFromEdges))
                 .frame(width: 60)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
               Text("px")
@@ -54,11 +54,7 @@ struct AppearanceSettingsView: View, ABarSettingsBindable {
             HStack {
               Text("Bar radius")
               Spacer()
-              TextField(
-                "",
-                value: binding(\.global.barCornerRadius),
-                formatter: NumberFormatter()
-              )
+              SettingsNumberField(value: binding(\.global.barCornerRadius))
                 .frame(width: 60)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
               Text("px")
@@ -71,11 +67,7 @@ struct AppearanceSettingsView: View, ABarSettingsBindable {
             HStack {
               Text("Bar background opacity")
               Spacer()
-              TextField(
-                "",
-                value: binding(\.global.barOpacity),
-                formatter: NumberFormatter()
-              )
+              SettingsNumberField(value: binding(\.global.barOpacity))
                 .frame(width: 60)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
               Text("%")
@@ -97,7 +89,7 @@ struct AppearanceSettingsView: View, ABarSettingsBindable {
             HStack {
               Text("Gap between elements")
               Spacer()
-              TextField("", value: binding(\.global.barElementGap), formatter: NumberFormatter())
+              SettingsNumberField(value: binding(\.global.barElementGap))
                 .frame(width: 60)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
               Text("px")
@@ -106,7 +98,7 @@ struct AppearanceSettingsView: View, ABarSettingsBindable {
             HStack {
               Text("Elements border radius")
               Spacer()
-              TextField("", value: binding(\.global.barElementsCornerRadius), formatter: NumberFormatter())
+              SettingsNumberField(value: binding(\.global.barElementsCornerRadius))
                 .frame(width: 60)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
               Text("px")
@@ -115,7 +107,7 @@ struct AppearanceSettingsView: View, ABarSettingsBindable {
             HStack {
               Text("Elements background opacity")
               Spacer()
-              TextField("", value: binding(\.global.barElementsBackgroundOpacity), formatter: NumberFormatter())
+              SettingsNumberField(value: binding(\.global.barElementsBackgroundOpacity))
                 .frame(width: 60)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
               Text("%")
@@ -144,7 +136,7 @@ struct AppearanceSettingsView: View, ABarSettingsBindable {
             HStack {
               Text("Font size")
               Spacer()
-              TextField("", value: binding(\.global.fontSize), formatter: NumberFormatter())
+              SettingsNumberField(value: binding(\.global.fontSize))
                 .frame(width: 60)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
               Text("px")

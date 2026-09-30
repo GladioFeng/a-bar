@@ -137,6 +137,10 @@
 		A1000301 /* GraphHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000301 /* GraphHistoryTests.swift */; };
 		A1000302 /* AerospaceDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000302 /* AerospaceDecodingTests.swift */; };
 		A1000303 /* ThemeColorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000303 /* ThemeColorTests.swift */; };
+		A1000350 /* SettingsNumberFieldTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000350 /* SettingsNumberFieldTests.swift */; };
+		A1000270 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000074 /* AppearanceSettingsView.swift */; };
+		A1000271 /* SettingsNumberField.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000351 /* SettingsNumberField.swift */; };
+		A1000272 /* SettingsNumberField.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000351 /* SettingsNumberField.swift */; };
 		A1000210 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000012 /* Settings.swift */; };
 		A1000211 /* SettingsCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000025 /* SettingsCodec.swift */; };
 		A1000212 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000026 /* SettingsStore.swift */; };
@@ -310,6 +314,8 @@
 		B1000301 /* GraphHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GraphHistoryTests.swift"; sourceTree = "<group>"; };
 		B1000302 /* AerospaceDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AerospaceDecodingTests.swift"; sourceTree = "<group>"; };
 		B1000303 /* ThemeColorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ThemeColorTests.swift"; sourceTree = "<group>"; };
+		B1000350 /* SettingsNumberFieldTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsNumberFieldTests.swift; sourceTree = "<group>"; };
+		B1000351 /* SettingsNumberField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsNumberField.swift; sourceTree = "<group>"; };
 		B1000304 /* YabaiStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "YabaiStateTests.swift"; sourceTree = "<group>"; };
 		B1000305 /* FormattingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FormattingTests.swift"; sourceTree = "<group>"; };
 		B1000306 /* ShellExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ShellExecutorTests.swift"; sourceTree = "<group>"; };
@@ -525,6 +531,7 @@
 				B1000071 /* GeneralSettingsView.swift */,
 				B1000072 /* WidgetSettingsViews.swift */,
 				B1000074 /* AppearanceSettingsView.swift */,
+				B1000351 /* SettingsNumberField.swift */,
 				B1000075 /* LayoutBuilderView.swift */,
 			);
 			path = Settings;
@@ -620,6 +627,7 @@
 				B1000301 /* GraphHistoryTests.swift */,
 				B1000302 /* AerospaceDecodingTests.swift */,
 				B1000303 /* ThemeColorTests.swift */,
+				B1000350 /* SettingsNumberFieldTests.swift */,
 				B1000304 /* YabaiStateTests.swift */,
 				B1000318 /* YabaiServiceTests.swift */,
 				B1000319 /* AppIconProviderTests.swift */,
@@ -790,6 +798,7 @@
 				A1000071 /* GeneralSettingsView.swift in Sources */,
 				A1000072 /* WidgetSettingsViews.swift in Sources */,
 				A1000074 /* AppearanceSettingsView.swift in Sources */,
+				A1000271 /* SettingsNumberField.swift in Sources */,
 				A1000075 /* LayoutBuilderView.swift in Sources */,
 				A1000080 /* ShellExecutor.swift in Sources */,
 				A1000081 /* AppIconProvider.swift in Sources */,
@@ -870,6 +879,9 @@
 				A1000301 /* GraphHistoryTests.swift in Sources */,
 				A1000302 /* AerospaceDecodingTests.swift in Sources */,
 				A1000303 /* ThemeColorTests.swift in Sources */,
+				A1000350 /* SettingsNumberFieldTests.swift in Sources */,
+				A1000270 /* AppearanceSettingsView.swift in Sources */,
+				A1000272 /* SettingsNumberField.swift in Sources */,
 				A1000304 /* YabaiStateTests.swift in Sources */,
 				A1000318 /* YabaiServiceTests.swift in Sources */,
 				A1000319 /* AppIconProviderTests.swift in Sources */,

@@ -112,6 +112,13 @@ class SettingsManager: ObservableObject {
       print("ℹ️ a-bar settings: \(summary)")
     }
 
+    // Theme colors also depend on the system appearance. Refresh every settings
+    // consumer (including popovers and draft previews) without changing or saving settings.
+    NSApplication.shared.publisher(for: \.effectiveAppearance, options: [.new])
+      .receive(on: RunLoop.main)
+      .sink { [weak self] _ in self?.objectWillChange.send() }
+      .store(in: &cancellables)
+
     // Monitor changes to draftSettings with debounce to avoid constant re-renders
     $draftSettings
       .dropFirst()  // Skip the initial value

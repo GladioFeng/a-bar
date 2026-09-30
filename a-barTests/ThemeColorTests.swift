@@ -146,6 +146,60 @@ final class ThemeColorTests: XCTestCase {
     assertComponents(under, red: 1, green: 1, blue: 1, alpha: 1)
   }
 
+  // MARK: - Automatic appearance
+
+  @MainActor
+  func testAutomaticAppearanceRepaintsMountedViewsWithoutChangingSettings() throws {
+    let app = NSApplication.shared
+    let previousAppearance = app.appearance
+    app.appearance = NSAppearance(named: .aqua)
+    defer { app.appearance = previousAppearance }
+
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let config = directory.appendingPathComponent("settings.json")
+    var initial = ABarSettings()
+    initial.theme.appearance = .auto
+    initial.theme.lightTheme = .dayShift
+    initial.theme.darkTheme = .catppuccinMocha
+    try SettingsCodec.encode(initial).write(to: config)
+    let manager = SettingsManager(store: SettingsStore(fileURL: config))
+    let saved = manager.settings
+    let draft = manager.draftSettings
+    let file = try Data(contentsOf: config)
+
+    let host = NSHostingView(rootView: ThemeBackgroundProbe().environmentObject(manager))
+    let window = NSWindow(
+      contentRect: NSRect(x: -10000, y: -10000, width: 60, height: 40),
+      styleMask: .borderless, backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    defer { window.close() }
+
+    func renderedRed() throws -> CGFloat {
+      RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+      host.layoutSubtreeIfNeeded()
+      let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+      host.cacheDisplay(in: host.bounds, to: bitmap)
+      return try XCTUnwrap(
+        bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)?
+          .usingColorSpace(.sRGB)).redComponent
+    }
+
+    let light = try renderedRed()
+    app.appearance = NSAppearance(named: .darkAqua)
+    XCTAssertEqual(ThemeManager.currentTheme(for: manager.settings.theme).name, "Catppuccin Mocha")
+    XCTAssertLessThan(try renderedRed(), light - 0.5, "the already-mounted view must repaint")
+    app.appearance = NSAppearance(named: .aqua)
+    XCTAssertEqual(try renderedRed(), light, accuracy: 0.01)
+
+    XCTAssertEqual(manager.settings, saved)
+    XCTAssertEqual(manager.draftSettings, draft)
+    XCTAssertFalse(manager.hasUnsavedChanges)
+    XCTAssertEqual(try Data(contentsOf: config), file, "appearance changes must not save configuration")
+  }
+
   // MARK: - Choosing a readable foreground
 
   func testALightBackgroundGetsADarkForeground() {
@@ -253,5 +307,13 @@ final class ThemeColorTests: XCTestCase {
 
     XCTAssertEqual(components(theme.background), components(ThemePreset.gruvboxDark.theme.background))
     XCTAssertEqual(components(theme.accent), components(ThemePreset.gruvboxDark.theme.accent))
+  }
+}
+
+private struct ThemeBackgroundProbe: View {
+  @EnvironmentObject var settings: SettingsManager
+
+  var body: some View {
+    Rectangle().fill(ThemeManager.currentTheme(for: settings.settings.theme).background)
   }
 }
