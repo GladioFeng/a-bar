@@ -1,14 +1,14 @@
-// 代码目的：允许数字设置在编辑时暂时为空，避免父视图刷新填回旧数字。
+// Purpose: Allow empty numeric edits without restoring the old value when the parent view refreshes.
 //
-// 代码逻辑：
-// 1. 将编辑文本与有效数字分别保存。
-// 2. 只将能完整解析的有限数字写回绑定，保留空串等输入中间状态。
-// 3. 失焦或回车时规范显示；外部设置变化仍同步到输入框。
+// Logic:
+// 1. Store the editing text separately from the valid numeric value.
+// 2. Write only fully parsed, finite numbers to the binding, preserving empty or partial input.
+// 3. Format the value on blur or Return, and sync external settings changes to the field.
 //
-// 必需输入：
-// - CGFloat、Double 或 Int 设置值的 Binding。
-// 预期输出：
-// - 正常可编辑的数字输入框和有效数值更新。
+// Required input:
+// - A Binding to a CGFloat, Double, or Int setting.
+// Expected output:
+// - An editable numeric field that publishes valid numeric updates.
 import SwiftUI
 
 struct SettingsNumberField<Value: Numeric>: View {

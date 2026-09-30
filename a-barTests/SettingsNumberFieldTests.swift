@@ -1,14 +1,14 @@
-// 代码目的：验证设置页数字编辑能保留空文本，避免删除后输入 24 得到 224。
+// Purpose: Verify that numeric settings preserve empty edits so clearing and typing 24 does not yield 224.
 //
-// 代码逻辑：
-// 1. 使用临时配置和真实 SettingsManager 挂载设置视图。
-// 2. 在隐藏窗口中操作原生 field editor，覆盖快速和慢速删除。
-// 3. 跨过未保存状态的延迟通知，检查输入文本与最终保存数值。
+// Logic:
+// 1. Mount settings views with a temporary configuration and the real SettingsManager.
+// 2. Exercise the native field editor in a hidden window with fast and slow deletions.
+// 3. Wait through debounced unsaved-state notifications, then check the text and saved value.
 //
-// 必需输入：
-// - 测试 target 中的设置模型与 SwiftUI 设置视图。
-// 预期输出：
-// - XCTest 回归结果；不读写正式用户配置。
+// Required input:
+// - Settings models and SwiftUI settings views included in the test target.
+// Expected output:
+// - XCTest regression results without reading or writing the user's actual configuration.
 import SwiftUI
 import XCTest
 
