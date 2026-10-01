@@ -5,6 +5,8 @@ struct BarView: View {
   let displayIndex: Int
   let screen: NSScreen
   let position: BarPosition
+  let githubModel: GitHubModel
+  let weatherModel: WeatherModel
 
   @EnvironmentObject var settings: SettingsManager
   @EnvironmentObject var layoutManager: LayoutManager
@@ -29,7 +31,8 @@ struct BarView: View {
         // Left section
         HStack(spacing: globalSettings.barElementGap) {
           ForEach(leftWidgets) { widget in
-            WidgetContainer(widget: widget, displayIndex: displayIndex, position: position)
+            WidgetContainer(widget: widget, displayIndex: displayIndex, position: position,
+                            githubModel: githubModel, weatherModel: weatherModel)
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -37,14 +40,16 @@ struct BarView: View {
         // Center section
         HStack(spacing: globalSettings.barElementGap) {
           ForEach(centerWidgets) { widget in
-            WidgetContainer(widget: widget, displayIndex: displayIndex, position: position)
+            WidgetContainer(widget: widget, displayIndex: displayIndex, position: position,
+                            githubModel: githubModel, weatherModel: weatherModel)
           }
         }
 
         // Right section
         HStack(spacing: globalSettings.barElementGap) {
           ForEach(rightWidgets) { widget in
-            WidgetContainer(widget: widget, displayIndex: displayIndex, position: position)
+            WidgetContainer(widget: widget, displayIndex: displayIndex, position: position,
+                            githubModel: githubModel, weatherModel: weatherModel)
           }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -121,6 +126,8 @@ struct WidgetContainer: View {
   let widget: WidgetInstance
   let displayIndex: Int
   let position: BarPosition
+  let githubModel: GitHubModel
+  let weatherModel: WeatherModel
 
   @EnvironmentObject var settings: SettingsManager
 
@@ -138,7 +145,7 @@ struct WidgetContainer: View {
       case .battery:
         BatteryWidget()
       case .weather:
-        WeatherWidget()
+        WeatherWidget(model: weatherModel)
       case .time:
         TimeWidget()
       case .date:
@@ -154,7 +161,7 @@ struct WidgetContainer: View {
       case .keyboard:
         KeyboardWidget()
       case .github:
-        GitHubWidget()
+        GitHubWidget(model: githubModel)
       case .hackerNews:
         HackerNewsWidget(position: position)
       case .cpu:
@@ -173,7 +180,10 @@ struct WidgetContainer: View {
         if let index = widget.userWidgetIndex,
           index < settings.settings.userWidgets.count
         {
-          UserWidget(config: settings.settings.userWidgets[index], position: position)
+          let config = settings.settings.userWidgets[index]
+          UserWidget(config: config, position: position)
+            // Replace only this widget when its command or activation changes, including captured callbacks.
+            .id([config.id.uuidString, config.command, String(config.isActive)])
         } else {
           EmptyView()
         }

@@ -3,10 +3,13 @@ import Combine
 import SwiftUI
 
 /// Main application delegate handling bar windows, services, and menu bar setup
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// Bar windows keyed by display index and position
   private var barWindows: [BarWindowKey: BarWindow] = [:]
+  private var appliedWindowConfiguration: BarWindowPlan.Configuration?
+  private var appliedServiceConfiguration: BarWindowPlan.ServiceConfiguration?
 
   /// Status bar item for menu bar icon
   private var statusItem: NSStatusItem?
@@ -35,6 +38,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   let systemInfoService = SystemInfoService.shared
   let bluetoothService = BluetoothService.shared
   let wifiService = WifiService.shared
+  let githubModel = GitHubModel()
+  let weatherModel = WeatherModel()
 
   /// Layout manager for widget arrangement
   let layoutManager = LayoutManager.shared
@@ -108,6 +113,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     barWindows.values.forEach { $0.close() }
     yabaiService.stop()
     aerospaceService.stop()
+    githubModel.stop()
+    weatherModel.stop()
     runningWindowManager = nil
     runningWindowManagerPath = nil
   }
@@ -203,13 +210,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   // Create bar windows based on current screen configuration and layout settings
-  private func setupBarWindows() {
+  private func setupBarWindows(force: Bool = false) {
+    // Sampling settings must still update when the existing windows can be reused.
     defer { updateSystemServices() }
+    let screens = NSScreen.screens
+    let configuration = BarWindowPlan.Configuration(
+      screenCount: screens.count,
+      layout: layoutManager.multiDisplayLayout,
+      global: settingsManager.settings.global)
+    guard force || configuration != appliedWindowConfiguration else { return }
+    appliedWindowConfiguration = configuration
+
+    WidgetPopoverManager.closeAll()
     // Remove existing windows
     barWindows.values.forEach { $0.close() }
     barWindows.removeAll()
 
-    let screens = NSScreen.screens
     let plan = BarWindowPlan.windows(
       screenCount: screens.count,
       layout: layoutManager.multiDisplayLayout,
@@ -221,7 +237,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       let barWindow = BarWindow(
         screen: screens[key.displayIndex],
         displayIndex: key.displayIndex,
-        position: key.position
+        position: key.position,
+        githubModel: githubModel,
+        weatherModel: weatherModel
       )
       barWindows[key] = barWindow
       barWindow.makeKeyAndOrderFront(nil)
@@ -235,7 +253,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       object: nil,
       queue: .main
     ) { [weak self] _ in
-      self?.setupBarWindows()
+      Task { @MainActor [weak self] in
+        self?.setupBarWindows(force: true)
+      }
     }
   }
 
@@ -264,9 +284,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   /// Hidden widgets must not poll or initialize blocking hardware APIs.
   private func updateSystemServices() {
     let widgets = visibleWidgets
-    systemInfoService.start(widgets: widgets)
-    if widgets.contains(.bluetooth) { bluetoothService.start() } else { bluetoothService.stop() }
-    if widgets.contains(.wifi) { wifiService.start() } else { wifiService.stop() }
+    let settings = settingsManager.settings.widgets
+    // All bars share one request and timer per network source. A window rebuild must not stop them.
+    if widgets.contains(.github) {
+      githubModel.start(executable: settings.github.ghBinaryPath, refreshInterval: settings.github.refreshInterval)
+    } else {
+      githubModel.stop()
+    }
+    if widgets.contains(.weather) {
+      weatherModel.start(location: settings.weather.customLocation, refreshInterval: settings.weather.refreshInterval)
+    } else {
+      weatherModel.stop()
+    }
+    let configuration = BarWindowPlan.ServiceConfiguration(
+      widgets: widgets, settings: settings)
+    let previous = appliedServiceConfiguration
+
+    if previous?.systemIntervals != configuration.systemIntervals {
+      systemInfoService.start(widgets: Set(configuration.systemIntervals.keys))
+    }
+    if previous?.bluetooth != configuration.bluetooth {
+      if let bluetooth = configuration.bluetooth {
+        bluetoothService.start()
+        if bluetooth.showBatteryInBar { bluetoothService.refreshBatteryLevels() }
+      } else {
+        bluetoothService.stop()
+      }
+    }
+    if previous?.wifi != configuration.wifi {
+      if let wifi = configuration.wifi {
+        // Changing the interface invalidates its in-flight scan; timer-only changes keep event monitoring.
+        if let old = previous?.wifi, old.networkDevice != wifi.networkDevice {
+          wifiService.stop()
+        }
+        wifiService.start()
+      } else {
+        wifiService.stop()
+      }
+    }
+    appliedServiceConfiguration = configuration
   }
 
   // Subscribe to settings changes to update bar windows and launch at login status
@@ -281,6 +337,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Subscribe to layout changes specifically to recreate windows
     layoutManager.$multiDisplayLayout
+      .removeDuplicates()
       .dropFirst()
       .debounce(for: .milliseconds(200), scheduler: DispatchQueue.main)
       .sink { [weak self] _ in
@@ -291,6 +348,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   // Handle changes in settings to update bar windows and launch at login status
   private func handleSettingsChange(_ settings: ABarSettings) {
+    // A save can move anchors or change content size. Close popovers while retaining bar state.
+    WidgetPopoverManager.closeAll()
     setupBarWindows()
 
     // Restart window manager services if the WM changed

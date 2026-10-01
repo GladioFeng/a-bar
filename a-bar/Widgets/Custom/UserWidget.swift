@@ -36,10 +36,8 @@ struct UserWidget: View {
   @State private var cycleTimer: Timer?
   @State private var isRefreshingOutput = false
   @State private var hasQueuedRefresh = false
-
-  /// Maximum script output size that will be parsed (512 KB).
-  /// Output exceeding this is treated as a script error to prevent memory issues.
-  private static let maxOutputBytes = 512 * 1024
+  @State private var refreshTask: Task<Void, Never>?
+  @State private var isVisible = false
 
   /// Minimum custom widget refresh interval.
   private static let minimumRefreshInterval: TimeInterval = 1
@@ -120,7 +118,7 @@ struct UserWidget: View {
   }
 
   var body: some View {
-    Group {
+    HStack(spacing: 0) {
       if config.isActive {
         if errorMessage != nil {
           // Error state: always visible regardless of hideWhenEmpty
@@ -160,6 +158,7 @@ struct UserWidget: View {
       }
     }
     .onAppear {
+      isVisible = true
       menuActionHandler.onRefresh = { refreshOutput() }
       restartRefreshTimer()
       restartCycleTimer()
@@ -170,26 +169,19 @@ struct UserWidget: View {
       }
     }
     .onDisappear {
+      isVisible = false
       stopTimers()
+      refreshTask?.cancel()
+      refreshTask = nil
+      isRefreshingOutput = false
+      hasQueuedRefresh = false
+      menuActionHandler.onRefresh = nil
     }
     .onChange(of: config.refreshInterval) { _ in
       restartRefreshTimer()
     }
     .onChange(of: config.cycleDuration) { _ in
       restartCycleTimer()
-    }
-    .onChange(of: config.isActive) { isActive in
-      restartRefreshTimer()
-      if isActive {
-        refreshOutput()
-      } else {
-        isLoading = false
-      }
-    }
-    .onChange(of: config.command) { _ in
-      if config.isActive {
-        refreshOutput()
-      }
     }
     .onReceive(
       NotificationCenter.default.publisher(for: .refreshUserWidget)
@@ -320,6 +312,8 @@ struct UserWidget: View {
 
   private func restartCycleTimer() {
     cycleTimer?.invalidate()
+    cycleTimer = nil
+    guard config.isActive else { return }
     let timer = Timer(timeInterval: safeCycleDuration, repeats: true) { _ in
       if parsedOutput.headerLines.count > 1 {
         currentHeaderIndex = (currentHeaderIndex + 1) % parsedOutput.headerLines.count
@@ -337,6 +331,7 @@ struct UserWidget: View {
   }
 
   private func refreshOutput() {
+    guard isVisible, config.isActive else { return }
     if isRefreshingOutput {
       hasQueuedRefresh = true
       return
@@ -354,10 +349,14 @@ struct UserWidget: View {
 
     isRefreshingOutput = true
 
-    Task {
+    refreshTask = Task {
+      guard !Task.isCancelled else { return }
       let result = await ShellExecutor.runWidget(command)
       await MainActor.run {
+        // A removed widget cannot publish a late result or start another queued command.
+        guard !Task.isCancelled, isVisible else { return }
         defer {
+          refreshTask = nil
           isRefreshingOutput = false
           if hasQueuedRefresh {
             hasQueuedRefresh = false
@@ -368,7 +367,9 @@ struct UserWidget: View {
         if !result.succeeded {
           // Build an informative error message from stderr and exit code
           let stderrTrimmed = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-          if result.exitCode == -1 {
+          if let executionError = result.executionError {
+            errorMessage = executionError
+          } else if result.exitCode == -1 {
             // Process launch failure — stderr already contains the description
             errorMessage = stderrTrimmed.isEmpty
               ? "Script could not be started."
@@ -383,19 +384,8 @@ struct UserWidget: View {
           return
         }
 
-        // Guard against excessively large output before parsing
-        let rawOutput = result.stdout
-        guard rawOutput.utf8.count <= Self.maxOutputBytes else {
-          errorMessage =
-            "Script output too large (\(rawOutput.utf8.count / 1024) KB). Maximum is \(Self.maxOutputBytes / 1024) KB."
-          parsedOutput = .empty
-          currentHeaderIndex = 0
-          isLoading = false
-          return
-        }
-
         errorMessage = nil
-        let newOutput = XBarParser.parse(rawOutput)
+        let newOutput = XBarParser.parse(result.stdout)
         if newOutput.headerLines.count != parsedOutput.headerLines.count {
           currentHeaderIndex = 0
         }
@@ -405,4 +395,3 @@ struct UserWidget: View {
     }
   }
 }
-

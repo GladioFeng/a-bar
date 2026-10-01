@@ -14,6 +14,55 @@ struct BarWindowKey: Hashable {
 /// attached but never configured gets none either.
 enum BarWindowPlan {
 
+  /// Only structural inputs require new windows; SwiftUI updates appearance and data in place.
+  struct Configuration: Equatable {
+    let screenCount: Int
+    let layout: MultiDisplayLayout
+    let barEnabled: Bool
+    let height: CGFloat
+    let inset: CGFloat
+
+    init(screenCount: Int, layout: MultiDisplayLayout, global: GlobalSettings) {
+      self.screenCount = screenCount
+      self.layout = layout
+      self.barEnabled = global.barEnabled
+      self.height = global.barHeight
+      self.inset = global.barDistanceFromEdges
+    }
+  }
+
+  /// Compare sampling inputs independently so cosmetic changes do not restart services.
+  struct ServiceConfiguration: Equatable {
+    struct Bluetooth: Equatable {
+      let refreshInterval: TimeInterval
+      let batteryRefreshInterval: TimeInterval
+      let showBatteryInBar: Bool
+    }
+
+    struct Wifi: Equatable {
+      let refreshInterval: TimeInterval
+      let scanInterval: TimeInterval
+      let networkDevice: String
+    }
+
+    let systemIntervals: [WidgetIdentifier: TimeInterval]
+    let bluetooth: Bluetooth?
+    let wifi: Wifi?
+
+    init(widgets: Set<WidgetIdentifier>, settings: WidgetSettings) {
+      systemIntervals = Dictionary(uniqueKeysWithValues:
+        WidgetRefreshSchedule.timers(for: widgets, in: settings).map { ($0.widget, $0.interval) })
+      bluetooth = widgets.contains(.bluetooth) ? Bluetooth(
+        refreshInterval: settings.bluetooth.refreshInterval,
+        batteryRefreshInterval: settings.bluetooth.batteryRefreshInterval,
+        showBatteryInBar: settings.bluetooth.showBatteryInBar) : nil
+      wifi = widgets.contains(.wifi) ? Wifi(
+        refreshInterval: settings.wifi.refreshInterval,
+        scanInterval: settings.wifi.scanInterval,
+        networkDevice: settings.wifi.networkDevice.trimmingCharacters(in: .whitespaces)) : nil
+    }
+  }
+
   /// The bars to open, in creation order: each attached display in index order, top before
   /// bottom.
   static func windows(

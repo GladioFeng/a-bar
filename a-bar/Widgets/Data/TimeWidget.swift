@@ -54,6 +54,18 @@ struct TimeWidget: View {
       refreshTimer?.invalidate()
       refreshTimer = nil
     }
+    .onChange(of: timeSettings.refreshInterval) { _ in
+      startTimer()
+    }
+    .onChange(of: timeSettings) { _ in
+      currentTime = Date()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
+      currentTime = Date()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: NSLocale.currentLocaleDidChangeNotification)) { _ in
+      currentTime = Date()
+    }
   }
 
   private var formattedTime: String {
@@ -63,9 +75,21 @@ struct TimeWidget: View {
 
   private func startTimer() {
     refreshTimer?.invalidate()
+    currentTime = Date()
     refreshTimer = Timer.scheduledTimer(withTimeInterval: timeSettings.refreshInterval, repeats: true) { _ in
-      currentTime = Date()
+      let now = Date()
+      if Self.shouldUpdateTime(from: currentTime, to: now, settings: timeSettings) {
+        currentTime = now
+      }
     }
+  }
+
+  /// Preserve the configured timer cadence, but do not invalidate an unchanged minute-only face.
+  static func shouldUpdateTime(
+    from current: Date, to next: Date, settings: TimeWidgetSettings, calendar: Calendar = .current
+  ) -> Bool {
+    settings.showSeconds || settings.showDayProgress
+      || !calendar.isDate(current, equalTo: next, toGranularity: .minute)
   }
 }
 

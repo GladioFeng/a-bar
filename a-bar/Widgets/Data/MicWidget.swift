@@ -8,9 +8,7 @@ struct MicWidget: View {
   @EnvironmentObject var settings: SettingsManager
   @EnvironmentObject var systemInfo: SystemInfoService
 
-  @State private var showPopper: Bool = false
-  @StateObject private var popoverManager = MicPopoverManager()
-  private static let outsideClickMonitor = OutsideClickMonitor()
+  @StateObject private var popoverManager = WidgetPopoverManager()
 
   private var globalSettings: GlobalSettings {
     settings.settings.global
@@ -34,26 +32,10 @@ struct MicWidget: View {
     BaseWidgetView(
       backgroundColor: globalSettings.noColorInDataWidgets ? theme.minor : bgColor,
       onClick: {
-        if showPopper {
-          showPopper = false
-          popoverManager.scheduleClose()
-          Self.outsideClickMonitor.stop()
-        } else {
-          // Activate abar so the popover can render even if not focused
+        if !popoverManager.isOpen {
           NSApp.activate(ignoringOtherApps: true)
-          showPopper = true
-          popoverManager.showPanel()
-          // Listen for outside click only when opening
-          DispatchQueue.main.async {
-            Self.outsideClickMonitor.start {
-              if showPopper {
-                showPopper = false
-                popoverManager.scheduleClose()
-                Self.outsideClickMonitor.stop()
-              }
-            }
-          }
         }
+        popoverManager.toggle()
       },
       onRightClick: openSoundPreferences
     ) {
@@ -69,7 +51,7 @@ struct MicWidget: View {
       }
     }
     .background(
-      AnchorView(
+      WidgetPopoverAnchor(
         onMake: { view in
           popoverManager.attach(anchorView: view, position: position)
 
@@ -91,8 +73,7 @@ struct MicWidget: View {
 
           popoverManager.setContent {
             PopoverContent(
-              sliderValue: Double(systemInfo.micLevel), theme: theme,
-              globalSettings: globalSettings,
+              sliderValue: Double(systemInfo.micLevel),
               onCommit: commit, onToggleMute: toggle, onOpenPrefs: openPrefs
             )
             .environmentObject(settings)
@@ -112,11 +93,12 @@ struct MicWidget: View {
       VolumeLevel.normalize(systemInfo.micLevel), isMuted: systemInfo.isMicMuted)
   }
 
-  private struct PopoverContent: View {
+  struct PopoverContent: View {
     @EnvironmentObject var systemInfo: SystemInfoService
     @State var sliderValue: Double
-    var theme: ABarTheme
-    var globalSettings: GlobalSettings
+    @EnvironmentObject var settings: SettingsManager
+    private var theme: ABarTheme { ThemeManager.currentTheme(for: settings.settings.theme) }
+    private var globalSettings: GlobalSettings { settings.settings.global }
     let onCommit: (Double) -> Void
     let onToggleMute: () -> Void
     let onOpenPrefs: () -> Void
@@ -178,173 +160,6 @@ struct MicWidget: View {
       .onReceive(systemInfo.$micLevel) { newLevel in
         // update slider while open when system mic level changes externally
         sliderValue = Double(newLevel)
-      }
-    }
-  }
-
-  private class MicPopoverManager: NSObject, ObservableObject {
-    private weak var anchorView: NSView?
-    private var panel: NSPanel?
-    private var host: NSHostingController<AnyView>?
-    private var contentProvider: (() -> AnyView)?
-    private var closeWorkItem: DispatchWorkItem?
-    private var barPosition: BarPosition = .top
-
-    func attach(anchorView: NSView, position: BarPosition) {
-      self.anchorView = anchorView
-      self.barPosition = position
-    }
-
-    private func makePanelIfNeeded() {
-      guard panel == nil else { return }
-      let p = NSPanel(
-        contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: true)
-      p.isOpaque = false
-      p.backgroundColor = .clear
-      p.hasShadow = true
-      p.level = .statusBar
-      p.isMovableByWindowBackground = false
-      p.collectionBehavior = [.canJoinAllSpaces, .transient]
-      p.ignoresMouseEvents = false
-      p.becomesKeyOnlyIfNeeded = true
-      // Prevent panel from stealing focus
-      p.isReleasedWhenClosed = false
-      panel = p
-    }
-
-    func showPanel() {
-      guard let anchor = anchorView else { return }
-      makePanelIfNeeded()
-      guard let panel = panel else { return }
-
-      DispatchQueue.main.async {
-        // ensure we have hosting controller, create fresh content each show to pick up latest environment
-        if let provider = self.contentProvider {
-          let view = provider()
-          if self.host == nil {
-            let h = NSHostingController(rootView: view)
-            h.view.wantsLayer = true
-            h.view.layer?.masksToBounds = false
-            self.host = h
-            panel.contentView = h.view
-          } else if let host = self.host {
-            host.rootView = view
-          }
-        }
-
-        guard let hostView = self.host?.view else { return }
-
-        // compute size
-        let desiredSize = hostView.fittingSize
-        let size = NSSize(width: max(180, desiredSize.width), height: desiredSize.height)
-
-        // compute screen position below/above anchor based on bar position
-        guard let win = anchor.window else { return }
-        let rectInWindow = anchor.convert(anchor.bounds, to: win.contentView)
-        let screenRect = win.convertToScreen(rectInWindow)
-        
-        // Get screen bounds to prevent drawing outside
-        guard let screen = win.screen else { return }
-        let screenFrame = screen.visibleFrame
-
-        // Calculate horizontal position, centered on widget but clamped to screen
-        var x = screenRect.midX - (size.width / 2)
-        x = max(screenFrame.minX + 6, min(x, screenFrame.maxX - size.width - 6))
-        
-        // Position popover below widget for top bar, above for bottom bar
-        let y = self.barPosition == .top
-          ? screenRect.minY - size.height - 6
-          : screenRect.maxY + 6
-        let origin = NSPoint(x: x, y: y)
-
-        panel.setFrame(NSRect(origin: origin, size: size), display: true)
-        panel.orderFrontRegardless()
-
-        self.cancelClose()
-      }
-    }
-
-    func scheduleClose(after delay: TimeInterval = 0.6) {
-      cancelClose()
-      let item = DispatchWorkItem { [weak self] in
-        guard let self = self else { return }
-        DispatchQueue.main.async {
-          self.panel?.orderOut(nil)
-        }
-      }
-      closeWorkItem = item
-      DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
-    }
-
-    private func cancelClose() {
-      closeWorkItem?.cancel()
-      closeWorkItem = nil
-    }
-
-    // set the SwiftUI content shown in the panel
-    func setContent<Content: View>(_ provider: @escaping () -> Content) {
-      contentProvider = {
-        AnyView(provider())
-      }
-      // if panel already exists, refresh host
-      if let panel = panel, let provider = contentProvider {
-        let view = provider()
-        let h = NSHostingController(rootView: view)
-        h.view.wantsLayer = true
-        host = h
-        panel.contentView = h.view
-      }
-    }
-  }
-
-  /// Small helper to get an NSView anchor for the SwiftUI view
-  private struct AnchorView: NSViewRepresentable {
-    var onMake: (NSView) -> Void
-    var onHoverChanged: ((Bool) -> Void)? = nil
-
-    func makeNSView(context: Context) -> NSView {
-      let v = TrackingNSView()
-      v.onHoverChanged = onHoverChanged
-      DispatchQueue.main.async {
-        onMake(v)
-      }
-      return v
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-
-    // Custom NSView subclass to ensure tracking area is always active and forwards mouse events
-    private class TrackingNSView: NSView {
-      private var trackingArea: NSTrackingArea?
-      var onHoverChanged: ((Bool) -> Void)?
-      private var isHovering = false
-
-      override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let ta = trackingArea {
-          removeTrackingArea(ta)
-        }
-        let options: NSTrackingArea.Options = [
-          .mouseEnteredAndExited, .activeAlways, .inVisibleRect, .mouseMoved,
-        ]
-        let ta = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
-        addTrackingArea(ta)
-        trackingArea = ta
-      }
-
-      override func mouseEntered(with event: NSEvent) {
-        isHovering = true
-        onHoverChanged?(true)
-      }
-      override func mouseExited(with event: NSEvent) {
-        isHovering = false
-        onHoverChanged?(false)
-      }
-      override func mouseMoved(with event: NSEvent) {
-        if !isHovering {
-          isHovering = true
-          onHoverChanged?(true)
-        }
       }
     }
   }

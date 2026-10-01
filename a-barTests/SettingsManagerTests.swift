@@ -44,6 +44,65 @@ final class SettingsManagerTests: XCTestCase {
       reopen().load().settings.global.barEnabled, "survives a restart")
   }
 
+  func testFirstEditCanBeSavedImmediatelyAndSurvivesRebase() {
+    let manager = SettingsManager(store: store)
+    manager.draftSettings.global.barHeight = 43
+    XCTAssertTrue(manager.hasUnsavedChanges)
+    XCTAssertTrue(manager.canSave)
+    manager.rebaseDraftIfClean()
+    XCTAssertEqual(manager.draftSettings.global.barHeight, 43)
+    manager.saveSettings()
+    manager.flush()
+    XCTAssertFalse(manager.hasUnsavedChanges)
+    XCTAssertEqual(manager.saveState, .idle)
+    XCTAssertEqual(reopen().load().settings.global.barHeight, 43)
+  }
+
+  func testFailedSaveKeepsAppliedSettingsAndRetryIncludesNewEdits() throws {
+    let manager = SettingsManager(store: store)
+    // A directory at the destination reliably rejects atomic file writes, even as root.
+    try FileManager.default.createDirectory(at: fileURL, withIntermediateDirectories: false)
+    manager.draftSettings.global.barHeight = 43
+    manager.saveSettings()
+    manager.flush()
+    XCTAssertEqual(manager.settings.global.barHeight, 43)
+    XCTAssertFalse(manager.hasUnsavedChanges)
+    XCTAssertTrue(manager.saveState.isFailure)
+    XCTAssertTrue(manager.canSave)
+
+    try FileManager.default.removeItem(at: fileURL)
+    manager.draftSettings.global.barHeight = 44
+    manager.saveSettings()
+    manager.flush()
+    XCTAssertEqual(manager.saveState, .idle)
+    XCTAssertFalse(manager.canSave)
+    XCTAssertEqual(reopen().load().settings.global.barHeight, 44)
+  }
+
+  func testAutomaticSaveFailureIsVisibleAndDiscardDoesNotHideIt() throws {
+    let manager = SettingsManager(store: store)
+    try FileManager.default.createDirectory(at: fileURL, withIntermediateDirectories: false)
+    manager.update { $0.global.barEnabled = false }
+    manager.flush()
+    manager.discardChanges()
+    XCTAssertTrue(manager.saveState.isFailure)
+    XCTAssertTrue(manager.canSave)
+    XCTAssertFalse(manager.settings.global.barEnabled)
+  }
+
+  func testSaveCompletionDoesNotClearNewDraftEdits() {
+    let manager = SettingsManager(store: store)
+    manager.draftSettings.global.barHeight = 43
+    manager.saveSettings()
+    XCTAssertEqual(manager.saveState, .saving)
+    manager.draftSettings.global.barHeight = 44
+    manager.flush()
+    XCTAssertEqual(manager.saveState, .idle)
+    XCTAssertTrue(manager.hasUnsavedChanges)
+    XCTAssertEqual(manager.draftSettings.global.barHeight, 44)
+    XCTAssertEqual(reopen().load().settings.global.barHeight, 43)
+  }
+
   func testUpdateKeepsTheDraftInStepSoSaveCannotRevertIt() {
     // The menu bar toggle and the AppleScript commands write through `update` while the
     // Preferences window holds its own copy. That copy used to be stale, so the next Save

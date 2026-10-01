@@ -81,6 +81,7 @@ final class WidgetPopoverManager: NSObject, ObservableObject {
     isOpen = true
     // Listen for outside clicks only while open.
     DispatchQueue.main.async {
+      guard self.isOpen else { return }
       WidgetPopoverManager.outsideClickMonitor.start {
         WidgetPopoverManager.closeAll()
       }
@@ -139,6 +140,7 @@ final class WidgetPopoverManager: NSObject, ObservableObject {
     guard let panel = panel else { return }
 
     DispatchQueue.main.async {
+      guard self.isOpen else { return }
       // ensure we have hosting controller, create fresh content each show to pick up latest environment
       if let provider = self.contentProvider {
         let view = provider()

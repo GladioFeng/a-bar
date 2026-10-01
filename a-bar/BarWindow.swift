@@ -6,12 +6,17 @@ class BarWindow: NSPanel {
   private let barScreen: NSScreen
   private let displayIndex: Int
   private let barPosition: BarPosition
+  private let githubModel: GitHubModel
+  private let weatherModel: WeatherModel
   private var hostingView: NSHostingView<AnyView>?
 
-  init(screen: NSScreen, displayIndex: Int, position: BarPosition) {
+  init(screen: NSScreen, displayIndex: Int, position: BarPosition,
+       githubModel: GitHubModel, weatherModel: WeatherModel) {
     self.barScreen = screen
     self.displayIndex = displayIndex
     self.barPosition = position
+    self.githubModel = githubModel
+    self.weatherModel = weatherModel
 
     // Calculate frame for the bar
     let settings = SettingsManager.shared.settings.global
@@ -53,7 +58,9 @@ class BarWindow: NSPanel {
     let barView = BarView(
       displayIndex: displayIndex,
       screen: barScreen,
-      position: barPosition
+      position: barPosition,
+      githubModel: githubModel,
+      weatherModel: weatherModel
     )
     .environmentObject(SettingsManager.shared)
     .environmentObject(YabaiService.shared)

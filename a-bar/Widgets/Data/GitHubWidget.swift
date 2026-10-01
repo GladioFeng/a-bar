@@ -4,8 +4,12 @@ import SwiftUI
 struct GitHubWidget: View {
     @EnvironmentObject var settings: SettingsManager
     
-    @State private var notificationCount: Int = 0
-    @State private var isLoading = true
+    @ObservedObject private var model: GitHubModel
+
+    init(model: GitHubModel) {
+        _model = ObservedObject(wrappedValue: model)
+    }
+    private var notificationCount: Int { model.count ?? 0 }
     
     private var githubSettings: GitHubWidgetSettings {
         settings.settings.widgets.github
@@ -16,9 +20,9 @@ struct GitHubWidget: View {
     }
     
     var body: some View {
-        // Keep polling even when hidden so the widget can reappear
-        Group {
-            if githubSettings.hideWhenNoNotifications && notificationCount == 0 && !isLoading {
+        // The shared model keeps polling when a zero count hides this content.
+        HStack(spacing: 0) {
+            if githubSettings.hideWhenNoNotifications && model.count == 0 && model.errorMessage == nil {
                 EmptyView()
             } else {
                 BaseWidgetView(
@@ -35,7 +39,7 @@ struct GitHubWidget: View {
                                 .foregroundColor(notificationCount > 0 ? theme.blue : theme.foreground)
                         }
                         
-                        if isLoading {
+                        if model.isLoading {
                             ProgressView()
                                 .scaleEffect(0.4)
                                 .frame(width: 12, height: 12)
@@ -43,51 +47,21 @@ struct GitHubWidget: View {
                             Text(notificationText)
                                 .foregroundColor(notificationCount > 0 ? theme.blue : theme.foreground)
                         }
+                        NetworkRefreshWarning(errorMessage: model.errorMessage, lastSuccess: model.lastSuccess)
                     }
                 }
             }
-        }
-        .onAppear {
-            refreshNotifications()
-        }
-        .onReceive(Timer.publish(every: githubSettings.refreshInterval, on: .main, in: .common).autoconnect()) { _ in
-            refreshNotifications()
         }
     }
     
     private var notificationText: String {
-        WidgetLabels.notificationCount(notificationCount)
+        model.count.map(WidgetLabels.notificationCount) ?? "--"
     }
     
     private func refreshNotifications() {
-        Task {
-            isLoading = true
-            
-            do {
-                let output = try await ShellExecutor.run("\(githubSettings.ghBinaryPath) api notifications 2>/dev/null")
-                
-                if let data = output.data(using: .utf8),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                    await MainActor.run {
-                        notificationCount = json.count
-                        isLoading = false
-                    }
-                } else {
-                    await MainActor.run {
-                        notificationCount = 0
-                        isLoading = false
-                    }
-                }
-            } catch {
-                print("GitHub notification fetch error: \(error)")
-                await MainActor.run {
-                    notificationCount = 0
-                    isLoading = false
-                }
-            }
-        }
+        model.refresh(executable: githubSettings.ghBinaryPath)
     }
-    
+
     private func openNotifications() {
         if let url = URL(string: githubSettings.notificationUrl) {
             NSWorkspace.shared.open(url)

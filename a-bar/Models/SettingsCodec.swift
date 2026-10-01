@@ -300,6 +300,13 @@ enum SettingsCodec {
       (\.battery.refreshInterval, 1),
       (\.weather.refreshInterval, 60),
       (\.time.refreshInterval, 0.1),
+      (\.date.refreshInterval, 1),
+      (\.sound.refreshInterval, 0.5),
+      (\.mic.refreshInterval, 0.5),
+      (\.keyboard.refreshInterval, 1),
+      (\.github.refreshInterval, 60),
+      (\.hackerNews.refreshInterval, 60),
+      (\.hackerNews.rotationInterval, 1),
       (\.cpu.refreshInterval, 0.5),
       (\.memory.refreshInterval, 0.5),
       (\.gpu.refreshInterval, 0.5),
@@ -338,9 +345,12 @@ enum SettingsCodec {
   }
 
   private static func normalizeUserWidgets(_ widgets: inout [UserWidgetDefinition]) {
+    let defaults = UserWidgetDefinition()
     for index in widgets.indices {
-      widgets[index].refreshInterval = max(1, widgets[index].refreshInterval)
-      widgets[index].cycleDuration = max(1, widgets[index].cycleDuration)
+      let refresh = widgets[index].refreshInterval
+      let cycle = widgets[index].cycleDuration
+      widgets[index].refreshInterval = refresh.isFinite ? max(1, refresh) : defaults.refreshInterval
+      widgets[index].cycleDuration = cycle.isFinite ? max(1, cycle) : defaults.cycleDuration
     }
   }
 

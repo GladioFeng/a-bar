@@ -61,7 +61,13 @@ class SettingsManager: ObservableObject {
 
   /// The copy the Preferences window edits; only `saveSettings()` promotes it.
   @Published var draftSettings: ABarSettings
-  @Published var hasUnsavedChanges: Bool = false
+  var hasUnsavedChanges: Bool { layoutModified || draftSettings != settings }
+  @Published private(set) var saveState: SettingsStore.SaveState = .idle
+
+  var canSave: Bool {
+    if case .failed = saveState { return true }
+    return hasUnsavedChanges || isDegraded
+  }
 
   /// The profile currently being edited in the Layout settings
   /// This is NOT the same as the active profile - it's just what's being edited
@@ -103,10 +109,11 @@ class SettingsManager: ObservableObject {
 
     self.settings = result.settings
     self.draftSettings = result.settings
-    self.hasUnsavedChanges = false
     self.draftLayout = layout
     self.layoutBaseline = layout
     self.loadSummary = result.summary
+    self.saveState = store.saveState
+    store.onSaveStateChange = { [weak self] state in self?.saveState = state }
 
     if let summary = result.summary {
       print("ℹ️ a-bar settings: \(summary)")
@@ -118,24 +125,6 @@ class SettingsManager: ObservableObject {
       .receive(on: RunLoop.main)
       .sink { [weak self] _ in self?.objectWillChange.send() }
       .store(in: &cancellables)
-
-    // Monitor changes to draftSettings with debounce to avoid constant re-renders
-    $draftSettings
-      .dropFirst()  // Skip the initial value
-      .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
-      .sink { [weak self] _ in
-        self?.refreshUnsavedState()
-      }
-      .store(in: &cancellables)
-
-    // Monitor changes to draftLayout
-    $draftLayout
-      .dropFirst()  // Skip the initial value
-      .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
-      .sink { [weak self] _ in
-        self?.refreshUnsavedState()
-      }
-      .store(in: &cancellables)
   }
 
   /// The layout of the active profile, resolved without touching `ProfileManager` so that
@@ -144,10 +133,6 @@ class SettingsManager: ObservableObject {
     let activeId = settings.activeProfileId.flatMap(UUID.init(uuidString:))
     let profile = settings.profiles.first { $0.id == activeId } ?? settings.profiles.first
     return profile?.multiDisplayLayout ?? .defaultLayout
-  }
-
-  private func refreshUnsavedState() {
-    hasUnsavedChanges = layoutModified || draftSettings != settings
   }
 
   /// Apply a change to the running settings, persist it, and mirror it into the draft so
@@ -201,13 +186,11 @@ class SettingsManager: ObservableObject {
     // An explicit save also clears degraded mode: the user has seen what the app is running
     // on and chose to keep it.
     store.saveExplicitly(updated)
-    hasUnsavedChanges = false
   }
 
   func discardChanges() {
     draftSettings = settings
     loadLayoutForEditing(activeLayout)
-    hasUnsavedChanges = false
   }
 
   /// Bring the draft back in line with the running settings, used when the Preferences

@@ -91,20 +91,31 @@ struct SettingsView: View {
         // Save button footer
         Divider()
         HStack {
-          if settings.hasUnsavedChanges {
-            Text("You have unsaved changes")
-              .font(.caption)
-              .foregroundColor(.secondary)
+          VStack(alignment: .leading, spacing: 4) {
+            if settings.hasUnsavedChanges {
+              Text("You have unsaved changes")
+                .foregroundColor(.secondary)
+            }
+            switch settings.saveState {
+            case .idle:
+              EmptyView()
+            case .saving:
+              Text("Saving…").foregroundColor(.secondary)
+            case .failed(let reason):
+              Text("Settings are applied, but could not be saved: \(reason)")
+                .foregroundColor(.red)
+            }
           }
+          .font(.caption)
           Spacer()
           Button(action: {
             settings.saveSettings()
           }) {
-            Text("Save Changes")
+            Text(settings.saveState.isFailure ? "Retry Save" : "Save Changes")
               .frame(minWidth: 100)
           }
           .buttonStyle(.borderedProminent)
-          .disabled(!settings.hasUnsavedChanges)
+          .disabled(!settings.canSave)
           .keyboardShortcut("s", modifiers: .command)
         }
         .padding()

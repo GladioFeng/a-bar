@@ -21,10 +21,16 @@ class YabaiService: ObservableObject {
         ("window_focused", "abar-window-focused"),
     ]
     private let settingsManager: SettingsManager
+    private enum RefreshScope { case windows, full }
     private var isStarted = false
     private var refreshGeneration = 0
     private var isRefreshing = false
-    private var refreshPending = false
+    private var pendingRefresh: RefreshScope?
+    private var hasFullSnapshot = false
+
+    private var titleRefreshNotification: String {
+        refreshNotification + ".window-title-changed"
+    }
 
     private var yabaiPath: String {
         settingsManager.settings.global.yabaiPath
@@ -94,7 +100,8 @@ class YabaiService: ObservableObject {
             if signalPath != yabaiPath {
                 refreshGeneration += 1
                 isRefreshing = false
-                refreshPending = false
+                pendingRefresh = nil
+                hasFullSnapshot = false
                 updateSignals(register: false, path: signalPath ?? yabaiPath)
                 signalPath = yabaiPath
                 setupYabaiSignals()
@@ -102,19 +109,23 @@ class YabaiService: ObservableObject {
             }
             return
         }
-        CFNotificationCenterAddObserver(
-            CFNotificationCenterGetDarwinNotifyCenter(),
-            Unmanaged.passUnretained(self).toOpaque(),
-            { _, observer, _, _, _ in
-                guard let observer else { return }
-                let service = Unmanaged<YabaiService>.fromOpaque(observer).takeUnretainedValue()
-                DispatchQueue.main.async { [weak service] in
-                    guard let service, service.isStarted else { return }
-                    service.refresh()
-                }
-            },
-            refreshNotification as CFString, nil, .deliverImmediately)
+        for notification in [refreshNotification, titleRefreshNotification] {
+            CFNotificationCenterAddObserver(
+                CFNotificationCenterGetDarwinNotifyCenter(),
+                Unmanaged.passUnretained(self).toOpaque(),
+                { _, observer, name, _, _ in
+                    guard let observer, let name else { return }
+                    let service = Unmanaged<YabaiService>.fromOpaque(observer).takeUnretainedValue()
+                    let notification = name.rawValue as String
+                    DispatchQueue.main.async { [weak service] in
+                        guard let service, service.isStarted else { return }
+                        service.refresh(notification == service.titleRefreshNotification ? .windows : .full)
+                    }
+                },
+                notification as CFString, nil, .deliverImmediately)
+        }
         isStarted = true
+        hasFullSnapshot = false
         signalPath = yabaiPath
         setupObservers()
         refresh()
@@ -125,13 +136,16 @@ class YabaiService: ObservableObject {
     /// Stop the yabai service
     func stop() {
         isStarted = false
-        CFNotificationCenterRemoveObserver(
-            CFNotificationCenterGetDarwinNotifyCenter(),
-            Unmanaged.passUnretained(self).toOpaque(),
-            CFNotificationName(refreshNotification as CFString), nil)
+        for notification in [refreshNotification, titleRefreshNotification] {
+            CFNotificationCenterRemoveObserver(
+                CFNotificationCenterGetDarwinNotifyCenter(),
+                Unmanaged.passUnretained(self).toOpaque(),
+                CFNotificationName(notification as CFString), nil)
+        }
         refreshGeneration += 1
         isRefreshing = false
-        refreshPending = false
+        pendingRefresh = nil
+        hasFullSnapshot = false
         if let observer = spaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
             spaceObserver = nil
@@ -174,8 +188,9 @@ class YabaiService: ObservableObject {
     }
     
     /// Darwin notifications avoid an AppleScript process and watchdog per window event.
-    private var signalAction: String {
-        "/usr/bin/notifyutil -p \(refreshNotification)"
+    private func signalAction(for event: String) -> String {
+        let notification = event == "window_title_changed" ? titleRefreshNotification : refreshNotification
+        return "/usr/bin/notifyutil -p \(notification)"
     }
 
     private func setupYabaiSignals() {
@@ -198,10 +213,11 @@ class YabaiService: ObservableObject {
                 let output = try await ShellExecutor.run(executable: path, arguments: ["-m", "signal", "--list"])
                 let signals = try JSONDecoder().decode([YabaiSignal].self, from: Data(output.utf8))
                 for (event, label) in Self.signalEvents {
-                    // Replace old AppleScript actions too, not just missing labels.
-                    if signals.contains(where: { $0.label == label && $0.action == signalAction }) { continue }
+                    // Keep the labels while migrating old AppleScript and full-refresh title actions.
+                    let action = signalAction(for: event)
+                    if signals.contains(where: { $0.label == label && $0.event == event && $0.action == action }) { continue }
                     try await ShellExecutor.run(executable: path, arguments: [
-                        "-m", "signal", "--add", "event=\(event)", "action=\(signalAction)", "label=\(label)"])
+                        "-m", "signal", "--add", "event=\(event)", "action=\(action)", "label=\(label)"])
                 }
                 guard isStarted, generation == refreshGeneration else { return }
                 if !signalsRegistered { signalsRegistered = true }
@@ -213,40 +229,91 @@ class YabaiService: ObservableObject {
         }
     }
 
-    /// Refresh immediately, retaining one follow-up if events arrive during a query.
+    /// Manual and structural events always request a complete snapshot.
     func refresh() {
+        refresh(.full)
+    }
+
+    /// Keep one pending request, with complete snapshots taking precedence over title updates.
+    @MainActor
+    private func enqueueRefresh(_ scope: RefreshScope) {
+        if scope == .full || pendingRefresh == nil { pendingRefresh = scope }
+    }
+
+    private func refresh(_ requestedScope: RefreshScope) {
         let generation = refreshGeneration
         Task { @MainActor in
             guard generation == refreshGeneration else { return }
-            guard !isRefreshing else {
-                refreshPending = true
-                return
-            }
+            enqueueRefresh(requestedScope)
+            guard !isRefreshing else { return }
             isRefreshing = true
-            repeat {
-                refreshPending = false
+            while let requested = pendingRefresh {
+                pendingRefresh = nil
+                let scope: RefreshScope = hasFullSnapshot ? requested : .full
                 let path = yabaiPath
                 do {
-                    async let spaces: [YabaiSpace] = fetch("spaces", path: path)
-                    async let windows: [YabaiWindow] = fetch("windows", path: path)
-                    async let displays: [YabaiDisplay] = fetch("displays", path: path)
-                    var next = try await YabaiState(spaces: spaces, windows: windows, displays: displays)
-                    next.windows.removeAll { window in
-                        guard let subrole = window.subrole else { return true }
-                        return subrole.isEmpty || subrole == "AXDialog"
+                    var next: YabaiState
+                    switch scope {
+                    case .full:
+                        async let spaces: [YabaiSpace] = fetch("spaces", path: path)
+                        async let windows: [YabaiWindow] = fetch("windows", path: path)
+                        async let displays: [YabaiDisplay] = fetch("displays", path: path)
+                        next = try await YabaiState(spaces: spaces, windows: windows, displays: displays)
+                        next.windows = filteredWindows(next.windows)
+                    case .windows:
+                        let windows = filteredWindows(try await fetch("windows", path: path))
+                        guard generation == refreshGeneration else { return }
+                        // A title event may race a structural change. Do not combine those windows
+                        // with cached Space/display membership; wait for the complete follow-up.
+                        guard pendingRefresh != .full, canApplyTitleUpdate(windows) else {
+                            enqueueRefresh(.full)
+                            continue
+                        }
+                        next = state
+                        next.windows = windows
                     }
                     // A stopped service must not overwrite a newer generation's state or flags.
                     guard generation == refreshGeneration else { return }
+                    if scope == .full { hasFullSnapshot = true }
                     if state != next { state = next }
                     if !isConnected { isConnected = true }
                     if lastError != nil { lastError = nil }
                 } catch {
                     guard generation == refreshGeneration else { return }
+                    hasFullSnapshot = false
                     handleError(error)
+                    // Retry a failed partial read once as a full snapshot. A failed full read
+                    // waits for another event instead of creating an unbounded retry loop.
+                    if scope == .windows { enqueueRefresh(.full) }
                 }
-            } while refreshPending
+            }
             isRefreshing = false
         }
+    }
+
+    private func filteredWindows(_ windows: [YabaiWindow]) -> [YabaiWindow] {
+        windows.filter { window in
+            guard let subrole = window.subrole else { return false }
+            return !subrole.isEmpty && subrole != "AXDialog"
+        }
+    }
+
+    /// Match identities and the fields that connect windows to cached Spaces/displays.
+    /// Removing each ID also rejects duplicates without trapping on malformed input.
+    private func canApplyTitleUpdate(_ windows: [YabaiWindow]) -> Bool {
+        guard state.windows.count == windows.count else { return false }
+        var previous: [Int: YabaiWindow] = [:]
+        for window in state.windows {
+            guard previous.updateValue(window, forKey: window.id) == nil else { return false }
+        }
+        for window in windows {
+            guard let old = previous.removeValue(forKey: window.id),
+                  old.pid == window.pid, old.space == window.space, old.display == window.display,
+                  old.hasFocus == window.hasFocus, old.isVisible == window.isVisible,
+                  old.isMinimized == window.isMinimized, old.isHidden == window.isHidden,
+                  old.isSticky == window.isSticky else { return false }
+        }
+        return previous.isEmpty
     }
 
     /// Process I/O and decoding stay off the main actor.

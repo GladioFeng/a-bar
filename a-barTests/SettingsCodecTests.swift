@@ -208,6 +208,68 @@ final class SettingsCodecTests: XCTestCase {
 
   // MARK: - Normalization
 
+  private let intervalMinimums: [(WritableKeyPath<ABarSettings, TimeInterval>, TimeInterval)] = [
+    (\.widgets.battery.refreshInterval, 1),
+    (\.widgets.weather.refreshInterval, 60),
+    (\.widgets.time.refreshInterval, 0.1),
+    (\.widgets.date.refreshInterval, 1),
+    (\.widgets.wifi.refreshInterval, 5),
+    (\.widgets.wifi.scanInterval, 5),
+    (\.widgets.bluetooth.refreshInterval, 1),
+    (\.widgets.bluetooth.batteryRefreshInterval, 15),
+    (\.widgets.sound.refreshInterval, 0.5),
+    (\.widgets.mic.refreshInterval, 0.5),
+    (\.widgets.keyboard.refreshInterval, 1),
+    (\.widgets.github.refreshInterval, 60),
+    (\.widgets.cpu.refreshInterval, 0.5),
+    (\.widgets.memory.refreshInterval, 0.5),
+    (\.widgets.gpu.refreshInterval, 0.5),
+    (\.widgets.netstats.refreshInterval, 0.5),
+    (\.widgets.diskActivity.refreshInterval, 0.5),
+    (\.widgets.storage.refreshInterval, 10),
+    (\.widgets.hackerNews.refreshInterval, 60),
+    (\.widgets.hackerNews.rotationInterval, 1),
+    (\.userWidgets[0].refreshInterval, 1),
+    (\.userWidgets[0].cycleDuration, 1),
+  ]
+
+  func testAllIntervalsAreClampedWhenLoadingJSON() {
+    for value in [-1.0, 0, 0.01] {
+      var settings = ABarSettings()
+      settings.userWidgets = [UserWidgetDefinition()]
+      for (path, _) in intervalMinimums { settings[keyPath: path] = value }
+      let (decoded, _) = decodeSettings(SettingsFixtures.json(settings))
+      for (path, minimum) in intervalMinimums {
+        XCTAssertEqual(decoded[keyPath: path], minimum, "\(path), input=\(value)")
+      }
+    }
+  }
+
+  func testNonfiniteIntervalsUseDefaultsAndRemainEncodable() {
+    var defaults = ABarSettings()
+    defaults.userWidgets = [UserWidgetDefinition()]
+    for value in [TimeInterval.nan, .infinity, -.infinity] {
+      var settings = defaults
+      for (path, _) in intervalMinimums { settings[keyPath: path] = value }
+      SettingsCodec.normalize(&settings)
+      for (path, _) in intervalMinimums {
+        XCTAssertEqual(settings[keyPath: path], defaults[keyPath: path], "\(path)")
+      }
+      XCTAssertNoThrow(try SettingsCodec.encode(settings))
+    }
+  }
+
+  func testValidFractionalIntervalsArePreserved() {
+    var settings = ABarSettings()
+    settings.userWidgets = [UserWidgetDefinition()]
+    for (path, minimum) in intervalMinimums { settings[keyPath: path] = minimum + 0.25 }
+    SettingsCodec.normalize(&settings)
+    for (path, minimum) in intervalMinimums {
+      XCTAssertEqual(settings[keyPath: path], minimum + 0.25, "\(path)")
+    }
+  }
+
+
   func testOutOfRangeValuesAreClampedNotDefaulted() {
     var settings = ABarSettings()
     settings.global.barHeight = 500

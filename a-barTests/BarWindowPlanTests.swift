@@ -178,4 +178,109 @@ final class BarWindowPlanTests: XCTestCase {
     XCTAssertEqual(
       BarWindowPlan.visibleWidgets(screenCount: 1, layout: layout, barEnabled: true), [.time])
   }
+
+  func testSharedNetworkSourcesRemainActiveUntilTheirLastBarDisappears() {
+    let layout = MultiDisplayLayout(displays: [
+      Fixture.display(0, top: Fixture.bar(.github, .weather)),
+      Fixture.display(1, top: Fixture.bar(.github, .weather)),
+    ])
+    for screens in [2, 1] {
+      XCTAssertEqual(
+        BarWindowPlan.visibleWidgets(screenCount: screens, layout: layout, barEnabled: true),
+        [.github, .weather], "removing one bar must not stop the shared sources")
+    }
+    XCTAssertTrue(BarWindowPlan.visibleWidgets(screenCount: 0, layout: layout, barEnabled: true).isEmpty)
+    XCTAssertTrue(BarWindowPlan.visibleWidgets(screenCount: 2, layout: layout, barEnabled: false).isEmpty)
+  }
+
+  // MARK: - Window and service update boundaries
+
+  func testAppearanceChangesKeepTheSameWindowConfiguration() {
+    let layout = Fixture.singleTopBar
+    let original = GlobalSettings()
+    var changed = original
+    changed.fontName = "Menlo"
+    changed.fontSize += 2
+    changed.barOpacity = 50
+    changed.barBackgroundBlur.toggle()
+    changed.barElementGap += 1
+
+    XCTAssertEqual(
+      BarWindowPlan.Configuration(screenCount: 1, layout: layout, global: original),
+      BarWindowPlan.Configuration(screenCount: 1, layout: layout, global: changed),
+      "SwiftUI handles appearance changes without replacing every widget's state")
+  }
+
+  func testWindowGeometryVisibilityAndLayoutChangesNeedNewWindows() {
+    let layout = Fixture.singleTopBar
+    let original = GlobalSettings()
+    let baseline = BarWindowPlan.Configuration(screenCount: 1, layout: layout, global: original)
+    let mutations: [(inout GlobalSettings) -> Void] = [
+      { $0.barEnabled.toggle() },
+      { $0.barHeight += 1 },
+      { $0.barDistanceFromEdges += 1 },
+    ]
+    for mutation in mutations {
+      var changed = original
+      mutation(&changed)
+      XCTAssertNotEqual(
+        baseline, BarWindowPlan.Configuration(screenCount: 1, layout: layout, global: changed))
+    }
+    XCTAssertNotEqual(
+      baseline, BarWindowPlan.Configuration(screenCount: 2, layout: layout, global: original))
+    var changedLayout = layout
+    changedLayout.displays[0].topBar?.left.append(WidgetInstance(identifier: .sound))
+    XCTAssertNotEqual(
+      baseline, BarWindowPlan.Configuration(screenCount: 1, layout: changedLayout, global: original))
+  }
+
+  func testServiceConfigurationIgnoresAppearanceAndInvisibleSamplers() {
+    let widgets: Set<WidgetIdentifier> = [.cpu, .wifi, .bluetooth]
+    let original = WidgetSettings()
+    var changed = original
+    changed.cpu.graphColor = .red
+    changed.cpu.showIcon.toggle()
+    changed.wifi.hideNetworkName.toggle()
+    changed.bluetooth.showConnectedDeviceName.toggle()
+    changed.memory.refreshInterval += 5
+    changed.time.refreshInterval += 5
+
+    XCTAssertEqual(
+      BarWindowPlan.ServiceConfiguration(widgets: widgets, settings: original),
+      BarWindowPlan.ServiceConfiguration(widgets: widgets.union([.time]), settings: changed),
+      "cosmetic and unused widget changes must not restart running samplers")
+  }
+
+  func testOnlyTheServiceWhoseInputsChangedNeedsUpdating() {
+    let widgets: Set<WidgetIdentifier> = [.cpu, .wifi, .bluetooth]
+    let original = WidgetSettings()
+    let baseline = BarWindowPlan.ServiceConfiguration(widgets: widgets, settings: original)
+    var changed = original
+    changed.cpu.refreshInterval += 1
+    let cpu = BarWindowPlan.ServiceConfiguration(widgets: widgets, settings: changed)
+    XCTAssertNotEqual(cpu.systemIntervals, baseline.systemIntervals)
+    XCTAssertEqual(cpu.wifi, baseline.wifi)
+    XCTAssertEqual(cpu.bluetooth, baseline.bluetooth)
+
+    changed = original
+    changed.wifi.networkDevice = "en7"
+    let wifi = BarWindowPlan.ServiceConfiguration(widgets: widgets, settings: changed)
+    XCTAssertEqual(wifi.systemIntervals, baseline.systemIntervals)
+    XCTAssertNotEqual(wifi.wifi, baseline.wifi)
+    XCTAssertEqual(wifi.bluetooth, baseline.bluetooth)
+
+    changed = original
+    changed.bluetooth.batteryRefreshInterval += 1
+    let bluetooth = BarWindowPlan.ServiceConfiguration(widgets: widgets, settings: changed)
+    XCTAssertEqual(bluetooth.systemIntervals, baseline.systemIntervals)
+    XCTAssertEqual(bluetooth.wifi, baseline.wifi)
+    XCTAssertNotEqual(bluetooth.bluetooth, baseline.bluetooth)
+  }
+
+  func testHidingTheLastConsumerRemovesItsServiceConfiguration() {
+    let configuration = BarWindowPlan.ServiceConfiguration(widgets: [], settings: WidgetSettings())
+    XCTAssertTrue(configuration.systemIntervals.isEmpty)
+    XCTAssertNil(configuration.wifi)
+    XCTAssertNil(configuration.bluetooth)
+  }
 }

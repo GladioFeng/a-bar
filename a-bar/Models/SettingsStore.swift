@@ -6,6 +6,22 @@ import Foundation
 /// Public API is main-thread only; file I/O happens on a private serial queue.
 final class SettingsStore {
 
+  enum SaveState: Equatable {
+    case idle
+    case saving
+    case failed(String)
+
+    var isFailure: Bool {
+      if case .failed = self { return true }
+      return false
+    }
+  }
+
+  private(set) var saveState: SaveState = .idle {
+    didSet { onSaveStateChange?(saveState) }
+  }
+  var onSaveStateChange: ((SaveState) -> Void)?
+
   enum Source: String {
     case file
     case backup
@@ -66,6 +82,7 @@ final class SettingsStore {
 
   private var pendingWrite: DispatchWorkItem?
   private var pendingSettings: ABarSettings?
+  private var writeGeneration = 0
 
   /// Set when the config file could not be parsed. While true the store refuses to write, so
   /// a corrupt file is preserved for the user instead of being replaced by defaults.
@@ -98,7 +115,10 @@ final class SettingsStore {
 
     if let imported = importLegacyUserDefaults() {
       // Make the migration durable straight away rather than waiting for the first edit.
-      write(imported.settings)
+      if case .failure(let error) = write(imported.settings) {
+        pendingSettings = imported.settings
+        saveState = .failed(error.localizedDescription)
+      }
       return imported
     }
 
@@ -193,29 +213,53 @@ final class SettingsStore {
     pendingWrite?.cancel()
     pendingWrite = nil
     guard let settings = pendingSettings else { return }
-    pendingSettings = nil
-    ioQueue.sync { self.write(settings) }
+    writeGeneration += 1
+    let result = ioQueue.sync { self.write(settings) }
+    finish(result, generation: writeGeneration)
   }
 
   private func schedule(_ settings: ABarSettings) {
     pendingSettings = settings
     pendingWrite?.cancel()
+    writeGeneration += 1
+    let generation = writeGeneration
+    saveState = .saving
 
     let work = DispatchWorkItem { [weak self] in
-      self?.write(settings)
+      guard let self = self else { return }
+      let result = self.write(settings)
+      DispatchQueue.main.async { [weak self] in
+        self?.finish(result, generation: generation)
+      }
     }
     pendingWrite = work
     ioQueue.asyncAfter(deadline: .now() + writeDelay, execute: work)
   }
 
-  private func write(_ settings: ABarSettings) {
+  private func finish(_ result: Result<Void, Error>, generation: Int) {
+    // An older write may finish after a newer edit was queued. Only the latest result
+    // may clear pending settings or change the status shown in Preferences.
+    guard generation == writeGeneration else { return }
+    pendingWrite = nil
+    switch result {
+    case .success:
+      pendingSettings = nil
+      saveState = .idle
+    case .failure(let error):
+      saveState = .failed(error.localizedDescription)
+    }
+  }
+
+  private func write(_ settings: ABarSettings) -> Result<Void, Error> {
     do {
       let data = try SettingsCodec.encode(settings)
       // Skip no-op writes so quitting the app does not churn the file.
-      if let existing = try? Data(contentsOf: fileURL), existing == data { return }
+      if let existing = try? Data(contentsOf: fileURL), existing == data { return .success(()) }
       try data.write(to: fileURL, options: .atomic)
+      return .success(())
     } catch {
       print("⚠️ a-bar: failed to write \(fileURL.path): \(error.localizedDescription)")
+      return .failure(error)
     }
   }
 

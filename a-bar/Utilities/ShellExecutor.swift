@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// Utility for executing shell commands
 enum ShellExecutor {
@@ -7,6 +8,7 @@ enum ShellExecutor {
     /// Prevents hung processes from blocking the GCD thread pool indefinitely,
     /// which is the primary cause of the app becoming unresponsive.
     private static let defaultTimeout: TimeInterval = 10
+    private static let widgetOutputLimit = 512 * 1024
 
     /// Shared PATH prefix prepended to every child process.
     private static let pathPrefix = "/usr/local/bin:/opt/homebrew/bin"
@@ -61,16 +63,65 @@ enum ShellExecutor {
     private final class PipeDrain {
         private let group = DispatchGroup()
         private var data = Data()
+        private(set) var failure: String?
 
-        init(_ pipe: Pipe) {
+        init(_ pipe: Pipe, byteLimit: Int? = nil, deadline: DispatchTime? = nil) {
             group.enter()
             DispatchQueue.global(qos: .utility).async { [self] in
-                data = pipe.fileHandleForReading.readDataToEndOfFile()
-                group.leave()
+                defer { group.leave() }
+                if let byteLimit, let deadline {
+                    drainBounded(pipe.fileHandleForReading, byteLimit: byteLimit, deadline: deadline)
+                } else {
+                    data = pipe.fileHandleForReading.readDataToEndOfFile()
+                }
             }
         }
 
-        /// Blocks until the write end closes, which happens when the child exits.
+        // Widget reads retain a bounded prefix and discard the rest while draining.
+        // Nonblocking reads enforce the deadline even if a descendant holds the write end;
+        // only this worker closes the read end.
+        private func drainBounded(_ handle: FileHandle, byteLimit: Int, deadline: DispatchTime) {
+            defer { try? handle.close() }
+            let fd = handle.fileDescriptor
+            let flags = fcntl(fd, F_GETFL, 0)
+            guard flags >= 0, fcntl(fd, F_SETFL, flags | O_NONBLOCK) >= 0 else {
+                failure = "Could not prepare script output pipe."
+                return
+            }
+            var buffer = [UInt8](repeating: 0, count: 16 * 1024)
+            while DispatchTime.now() < deadline {
+                var descriptor = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+                // Poll for at most 100 ms; continuous output must also check the deadline before each read.
+                let now = DispatchTime.now()
+                guard now < deadline else { break }
+                let remaining = deadline.uptimeNanoseconds - now.uptimeNanoseconds
+                let ready = poll(&descriptor, 1, Int32(min(100, max(1, remaining / 1_000_000))))
+                if ready < 0 {
+                    if errno == EINTR { continue }
+                    failure = failure ?? "Could not read script output pipe."
+                    return
+                }
+                if ready == 0 { continue }
+                while DispatchTime.now() < deadline {
+                    let count = buffer.withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
+                    if count == 0 { return } // POLLHUP can still carry unread bytes before EOF.
+                    if count < 0 {
+                        if errno == EINTR { continue }
+                        if errno == EAGAIN || errno == EWOULDBLOCK { break }
+                        failure = failure ?? "Could not read script output pipe."
+                        return
+                    }
+                    let available = byteLimit - data.count
+                    data.append(contentsOf: buffer.prefix(min(count, available)))
+                    if count > available {
+                        failure = failure ?? "Output exceeds the \(byteLimit / 1024) KiB limit."
+                    }
+                }
+            }
+            failure = failure ?? "Script output pipe did not close before the deadline."
+        }
+
+        /// Waits for EOF, or for the widget's bounded reader to reach its deadline.
         func string() -> String {
             group.wait()
             return String(data: data, encoding: .utf8) ?? ""
@@ -88,7 +139,7 @@ enum ShellExecutor {
         return try await run(makeProcess(command: command, stdout: pipe, stderr: pipe), pipe: pipe, timeout: timeout)
     }
 
-    /// Execute structured arguments literally, without starting a shell.
+    /// Execute structured arguments literally, returning only stdout on success.
     @discardableResult
     static func run(executable: String, arguments: [String], timeout: TimeInterval = defaultTimeout) async throws -> String {
         var path = (executable as NSString).expandingTildeInPath
@@ -102,11 +153,12 @@ enum ShellExecutor {
             path = resolved
         }
         let pipe = Pipe()
-        let process = makeProcess(executable: path, arguments: arguments, stdout: pipe, stderr: pipe)
-        return try await run(process, pipe: pipe, timeout: timeout, checkExit: true)
+        let stderrPipe = Pipe()
+        let process = makeProcess(executable: path, arguments: arguments, stdout: pipe, stderr: stderrPipe)
+        return try await run(process, pipe: pipe, stderrPipe: stderrPipe, timeout: timeout, checkExit: true)
     }
 
-    private static func run(_ process: Process, pipe: Pipe, timeout: TimeInterval, checkExit: Bool = false) async throws -> String {
+    private static func run(_ process: Process, pipe: Pipe, stderrPipe: Pipe? = nil, timeout: TimeInterval, checkExit: Bool = false) async throws -> String {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
@@ -117,15 +169,17 @@ enum ShellExecutor {
                 }
 
                 let output = PipeDrain(pipe)
+                let errorOutput = stderrPipe.map { PipeDrain($0) }
                 let timer = scheduleTimeoutWatchdog(for: process, timeout: timeout)
                 defer { timer.cancel() }
 
                 process.waitUntilExit()
                 let result = output.string()
+                let diagnostics = errorOutput?.string() ?? ""
                 if checkExit && process.terminationStatus != 0 {
                     continuation.resume(throwing: NSError(
                         domain: "ShellExecutor", code: Int(process.terminationStatus),
-                        userInfo: [NSLocalizedDescriptionKey: "\(process.executableURL!.lastPathComponent) exited with status \(process.terminationStatus): \(result)"]))
+                        userInfo: [NSLocalizedDescriptionKey: "\(process.executableURL!.lastPathComponent) exited with status \(process.terminationStatus): \(result)\(diagnostics)"]))
                 } else {
                     continuation.resume(returning: result)
                 }
@@ -141,8 +195,10 @@ enum ShellExecutor {
         let stderr: String
         /// Process exit code. 0 means success.
         let exitCode: Int32
+        /// Capture failure, independent of the script's own exit code.
+        var executionError: String? = nil
 
-        var succeeded: Bool { exitCode == 0 }
+        var succeeded: Bool { exitCode == 0 && executionError == nil }
     }
 
     /// Run a widget script with stdout and stderr captured separately.
@@ -168,19 +224,24 @@ enum ShellExecutor {
                     return
                 }
 
-                let outDrain = PipeDrain(stdoutPipe)
-                let errDrain = PipeDrain(stderrPipe)
+                // Include the watchdog's existing one-second SIGKILL grace period.
+                let deadline = DispatchTime.now() + timeout + 1
+                let outDrain = PipeDrain(stdoutPipe, byteLimit: widgetOutputLimit, deadline: deadline)
+                let errDrain = PipeDrain(stderrPipe, byteLimit: widgetOutputLimit, deadline: deadline)
                 let timer = scheduleTimeoutWatchdog(for: process, timeout: timeout)
                 defer { timer.cancel() }
 
                 process.waitUntilExit()
                 let stdout = outDrain.string()
                 let stderr = errDrain.string()
+                let executionError = outDrain.failure.map { "stdout: \($0)" }
+                    ?? errDrain.failure.map { "stderr: \($0)" }
 
                 continuation.resume(returning: WidgetRunResult(
                     stdout: stdout,
                     stderr: stderr,
-                    exitCode: process.terminationStatus
+                    exitCode: process.terminationStatus,
+                    executionError: executionError
                 ))
             }
         }

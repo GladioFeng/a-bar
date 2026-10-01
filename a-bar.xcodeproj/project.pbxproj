@@ -7,6 +7,26 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		T1000410 /* UserWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000060 /* UserWidget.swift */; };
+		T1000408 /* WidgetTimerViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000408 /* WidgetTimerViewTests.swift */; };
+		T1000409 /* TimeWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000042 /* TimeWidget.swift */; };
+		T1000405 /* NetworkWidgetModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000405 /* NetworkWidgetModelsTests.swift */; };
+		T1000407 /* GitHubWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000048 /* GitHubWidget.swift */; };
+		T1000406 /* WeatherWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000041 /* WeatherWidget.swift */; };
+		T1000404 /* NetworkWidgetViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000404 /* NetworkWidgetViewTests.swift */; };
+		T1000403 /* NetworkRefreshWarning.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000403 /* NetworkRefreshWarning.swift */; };
+		A1000403 /* NetworkRefreshWarning.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000403 /* NetworkRefreshWarning.swift */; };
+		T1000402 /* HackerNewsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000402 /* HackerNewsModel.swift */; };
+		A1000402 /* HackerNewsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000402 /* HackerNewsModel.swift */; };
+		T1000401 /* GitHubModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000401 /* GitHubModel.swift */; };
+		A1000401 /* GitHubModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000401 /* GitHubModel.swift */; };
+		T1000400 /* WeatherModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000400 /* WeatherModel.swift */; };
+		A1000400 /* WeatherModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000400 /* WeatherModel.swift */; };
+		A1000263 /* BaseWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000062 /* BaseWidgetView.swift */; };
+		A1000262 /* MicWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000046 /* MicWidget.swift */; };
+		A1000261 /* SoundWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000045 /* SoundWidget.swift */; };
+		A1000352 /* WidgetPopoverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000352 /* WidgetPopoverTests.swift */; };
+		A1000260 /* WidgetPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000086 /* WidgetPopover.swift */; };
 		0F3AA90F2F392ED300554810 /* HackerNewsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F3AA90E2F392ED300554810 /* HackerNewsWidget.swift */; };
 		0F5602482F33707500BBEA53 /* DiskActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F5602472F33707500BBEA53 /* DiskActivityWidget.swift */; };
 		0F56024A2F338BF200BBEA53 /* Profile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F5602492F338BF200BBEA53 /* Profile.swift */; };
@@ -206,6 +226,14 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B1000408 /* WidgetTimerViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetTimerViewTests.swift; sourceTree = "<group>"; };
+		B1000405 /* NetworkWidgetModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkWidgetModelsTests.swift; sourceTree = "<group>"; };
+		B1000404 /* NetworkWidgetViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkWidgetViewTests.swift; sourceTree = "<group>"; };
+		B1000403 /* NetworkRefreshWarning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkRefreshWarning.swift; sourceTree = "<group>"; };
+		B1000402 /* HackerNewsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HackerNewsModel.swift; sourceTree = "<group>"; };
+		B1000401 /* GitHubModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubModel.swift; sourceTree = "<group>"; };
+		B1000400 /* WeatherModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherModel.swift; sourceTree = "<group>"; };
+		B1000352 /* WidgetPopoverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetPopoverTests.swift"; sourceTree = "<group>"; };
 		0F3AA90E2F392ED300554810 /* HackerNewsWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HackerNewsWidget.swift; sourceTree = "<group>"; };
 		0F5602472F33707500BBEA53 /* DiskActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskActivityWidget.swift; sourceTree = "<group>"; };
 		0F5602492F338BF200BBEA53 /* Profile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Profile.swift; sourceTree = "<group>"; };
@@ -410,6 +438,9 @@
 		G1000003 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				B1000402 /* HackerNewsModel.swift */,
+				B1000401 /* GitHubModel.swift */,
+				B1000400 /* WeatherModel.swift */,
 				0F5602492F338BF200BBEA53 /* Profile.swift */,
 				C2000001 /* AerospaceTypes.swift */,
 				B1000010 /* YabaiTypes.swift */,
@@ -444,6 +475,7 @@
 		G1000005 /* Widgets */ = {
 			isa = PBXGroup;
 			children = (
+				B1000403 /* NetworkRefreshWarning.swift */,
 				B1000062 /* BaseWidgetView.swift */,
 				G1000005A /* Yabai */,
 				G1000005E /* Aerospace */,
@@ -603,6 +635,10 @@
 		G1000200 /* a-barTests */ = {
 			isa = PBXGroup;
 			children = (
+				B1000405 /* NetworkWidgetModelsTests.swift */,
+				B1000404 /* NetworkWidgetViewTests.swift */,
+				B1000408 /* WidgetTimerViewTests.swift */,
+				B1000352 /* WidgetPopoverTests.swift */,
 				B1000346 /* WidgetCommandDispatchTests.swift */,
 				B1000345 /* UserWidgetManagerTests.swift */,
 				B1000344 /* BluetoothServiceTests.swift */,
@@ -748,6 +784,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000403 /* NetworkRefreshWarning.swift in Sources */,
+				A1000402 /* HackerNewsModel.swift in Sources */,
+				A1000401 /* GitHubModel.swift in Sources */,
+				A1000400 /* WeatherModel.swift in Sources */,
 				A1000140 /* WidgetCommandDispatch.swift in Sources */,
 				A1000139 /* UserWidgetManager.swift in Sources */,
 				A1000138 /* NetstatParser.swift in Sources */,
@@ -845,6 +885,22 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				T1000405 /* NetworkWidgetModelsTests.swift in Sources */,
+				T1000407 /* GitHubWidget.swift in Sources */,
+				T1000406 /* WeatherWidget.swift in Sources */,
+				T1000404 /* NetworkWidgetViewTests.swift in Sources */,
+				T1000408 /* WidgetTimerViewTests.swift in Sources */,
+				T1000409 /* TimeWidget.swift in Sources */,
+				T1000410 /* UserWidget.swift in Sources */,
+				T1000403 /* NetworkRefreshWarning.swift in Sources */,
+				T1000402 /* HackerNewsModel.swift in Sources */,
+				T1000401 /* GitHubModel.swift in Sources */,
+				T1000400 /* WeatherModel.swift in Sources */,
+				A1000263 /* BaseWidgetView.swift in Sources */,
+				A1000262 /* MicWidget.swift in Sources */,
+				A1000261 /* SoundWidget.swift in Sources */,
+				A1000352 /* WidgetPopoverTests.swift in Sources */,
+				A1000260 /* WidgetPopover.swift in Sources */,
 				A1000346 /* WidgetCommandDispatchTests.swift in Sources */,
 				A1000345 /* UserWidgetManagerTests.swift in Sources */,
 				A1000257 /* WidgetCommandDispatch.swift in Sources */,

@@ -50,8 +50,7 @@ final class ShellExecutorTests: XCTestCase {
   }
 
   func testRunFoldsStandardErrorIntoItsOutput() async throws {
-    // `run` gives both streams the same pipe, so callers see stderr inline. `runWidget` is the
-    // one that keeps them apart.
+    // The shell-command overload retains its combined-output behavior.
     let output = try await ShellExecutor.run("echo oops 1>&2")
 
     XCTAssertEqual(output.trimmingCharacters(in: .whitespacesAndNewlines), "oops")
@@ -103,6 +102,18 @@ final class ShellExecutorTests: XCTestCase {
     let expected = String(repeating: "fixture\n", count: 12000)
     let output = try await ShellExecutor.run(executable: "/usr/bin/printf", arguments: ["%s", expected])
     XCTAssertEqual(output, expected)
+  }
+
+  func testDirectRunSeparatesAndDrainsBothStreamsBeyondThePipeBuffer() async throws {
+    let output = try await ShellExecutor.run(executable: "/bin/sh", arguments: ["-c", """
+      i=0
+      while [ "$i" -lt 12000 ]; do
+        printf 'fixture\n'
+        printf 'diagnostic\n' >&2
+        i=$((i + 1))
+      done
+      """])
+    XCTAssertEqual(output, String(repeating: "fixture\n", count: 12000))
   }
 
   func testDirectTimeoutThrowsAndAllowsRecovery() async throws {
@@ -180,6 +191,62 @@ final class ShellExecutorTests: XCTestCase {
     XCTAssertEqual(output.split(separator: "\n").count, 20000)
   }
 
+  func testWidgetStreamsAcceptExactlyTheirIndependentLimits() async {
+    let result = await ShellExecutor.runWidget("printf '%524288s' ''; printf '%524288s' '' >&2")
+    XCTAssertTrue(result.succeeded)
+    XCTAssertNil(result.executionError)
+    XCTAssertEqual(result.stdout.utf8.count, 512 * 1024)
+    XCTAssertEqual(result.stderr.utf8.count, 512 * 1024)
+  }
+
+  func testWidgetRejectsOneByteOverEitherLimitAndStillDrains() async {
+    for stream in ["stdout", "stderr"] {
+      let redirect = stream == "stderr" ? " >&2" : ""
+      let result = await ShellExecutor.runWidget("{ printf '%524288s' ''; printf x; }\(redirect)")
+      XCTAssertEqual(result.exitCode, 0, "the script can exit normally after exceeding the limit")
+      XCTAssertFalse(result.succeeded)
+      XCTAssertTrue(result.executionError?.contains(stream) == true)
+      XCTAssertTrue(result.executionError?.contains("512 KiB") == true)
+      XCTAssertLessThanOrEqual(result.stdout.utf8.count, 512 * 1024)
+      XCTAssertLessThanOrEqual(result.stderr.utf8.count, 512 * 1024)
+    }
+    let both = await ShellExecutor.runWidget("printf '%600000s' ''; printf '%600000s' '' >&2")
+    XCTAssertEqual(both.exitCode, 0)
+    XCTAssertFalse(both.succeeded)
+    XCTAssertEqual(both.stdout.utf8.count, 512 * 1024)
+    XCTAssertEqual(both.stderr.utf8.count, 512 * 1024)
+  }
+
+  func testWidgetDeadlineIncludesInheritedPipeWriters() async {
+    let started = Date()
+    // The shell exits successfully, but its background child keeps both write ends open.
+    let result = await ShellExecutor.runWidget("/bin/sleep 3 & printf done; exit 0", timeout: 0.05)
+    XCTAssertLessThan(Date().timeIntervalSince(started), 2.5)
+    XCTAssertEqual(result.exitCode, 0)
+    XCTAssertFalse(result.succeeded)
+    XCTAssertTrue(result.executionError?.contains("deadline") == true)
+    XCTAssertEqual(result.stdout, "done")
+    let recovery = await ShellExecutor.runWidget("printf recovered")
+    XCTAssertTrue(recovery.succeeded)
+    XCTAssertEqual(recovery.stdout, "recovered")
+  }
+
+  func testWidgetContinuousOverflowStopsAtItsDeadline() async {
+    let started = Date()
+    let result = await ShellExecutor.runWidget("while :; do printf '%65536s' ''; done", timeout: 0.1)
+    XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+    XCTAssertFalse(result.succeeded)
+    XCTAssertEqual(result.stdout.utf8.count, 512 * 1024)
+    XCTAssertNotNil(result.executionError)
+  }
+
+  func testWidgetLimitDoesNotCapOtherCommandPaths() async throws {
+    let command = "printf '%600000s' ''"
+    let output = try await ShellExecutor.run(command)
+    XCTAssertEqual(output.utf8.count, 600000)
+    XCTAssertEqual(ShellExecutor.runSync(command).utf8.count, 600000)
+  }
+
   // MARK: - A script that hangs must be killed, not waited on
 
   func testAHangingCommandIsTerminatedAtItsDeadline() async {
@@ -215,5 +282,7 @@ final class ShellExecutorTests: XCTestCase {
     XCTAssertFalse(
       ShellExecutor.WidgetRunResult(stdout: "", stderr: "", exitCode: -1).succeeded,
       "-1 is the code used when the process could not be started at all")
+    XCTAssertFalse(ShellExecutor.WidgetRunResult(
+      stdout: "", stderr: "", exitCode: 0, executionError: "capture failed").succeeded)
   }
 }

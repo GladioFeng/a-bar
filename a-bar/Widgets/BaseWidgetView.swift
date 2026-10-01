@@ -21,8 +21,7 @@ struct BaseWidgetView<Content: View>: View {
         onRightClick: (() -> Void)? = nil,
         @ViewBuilder content: @escaping () -> Content
     ) {
-        let theme = ThemeManager.currentTheme(for: SettingsManager.shared.settings.theme)
-        self.backgroundColor = backgroundColor ?? theme.minor
+        self.backgroundColor = backgroundColor
         self.width = width
         self.noPadding = noPadding
         self.onClick = onClick
@@ -95,11 +94,7 @@ struct BaseWidgetView<Content: View>: View {
 
     @ViewBuilder
     private var backgroundView: some View {
-        if let bg = backgroundColor {
-            RoundedRectangle(cornerRadius: globalSettings.barElementsCornerRadius)
-            .fill(bg.opacity(globalSettings.barElementsBackgroundOpacity / 100))
-        } else {
-            Color.clear
-        }
+        RoundedRectangle(cornerRadius: globalSettings.barElementsCornerRadius)
+            .fill((backgroundColor ?? theme.minor).opacity(globalSettings.barElementsBackgroundOpacity / 100))
     }
 }

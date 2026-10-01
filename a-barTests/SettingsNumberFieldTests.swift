@@ -41,13 +41,13 @@ final class SettingsNumberFieldTests: XCTestCase {
       editor.deleteBackward(nil)
       settle(deletionDelay)
       editor.deleteBackward(nil)
-      settle(0.4) // The real manager publishes its dirty state after 300 ms.
+      settle(0.4) // Clearing must survive subsequent SwiftUI refreshes.
       XCTAssertTrue(
         editor.string.isEmpty, "clearing must survive parent refresh, delay=\(deletionDelay)")
       editor.insertText("2", replacementRange: editor.selectedRange())
-      settle(0.4)
       XCTAssertEqual(manager.settings.global.barHeight, 25, "editing must remain a draft")
       XCTAssertTrue(manager.hasUnsavedChanges)
+      XCTAssertTrue(manager.canSave, "the first valid edit enables saving without a debounce")
       editor.insertText("4", replacementRange: editor.selectedRange())
       XCTAssertEqual(
         manager.draftSettings.global.barHeight, 24,

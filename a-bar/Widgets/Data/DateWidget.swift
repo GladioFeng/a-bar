@@ -48,6 +48,9 @@ struct DateWidget: View {
       refreshTimer?.invalidate()
       refreshTimer = nil
     }
+    .onChange(of: dateSettings.refreshInterval) { _ in
+      startTimer()
+    }
   }
 
   private var formattedDate: String {
@@ -63,6 +66,7 @@ struct DateWidget: View {
 
   private func startTimer() {
     refreshTimer?.invalidate()
+    currentDate = Date()
     refreshTimer = Timer.scheduledTimer(withTimeInterval: dateSettings.refreshInterval, repeats: true) { _ in
       currentDate = Date()
     }

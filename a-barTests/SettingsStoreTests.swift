@@ -130,6 +130,33 @@ final class SettingsStoreTests: XCTestCase {
 
   // MARK: - Saving
 
+  @MainActor
+  func testAsyncFailureAndRetryReportResultsOnMainThread() throws {
+    let store = makeStore()
+    try FileManager.default.createDirectory(at: fileURL, withIntermediateDirectories: false)
+    let failed = expectation(description: "write failed")
+    store.onSaveStateChange = { state in
+      XCTAssertTrue(Thread.isMainThread)
+      if state.isFailure { failed.fulfill() }
+    }
+    var settings = SettingsFixtures.settings()
+    settings.global.barHeight = 43
+    store.save(settings)
+    XCTAssertEqual(store.saveState, .saving)
+    wait(for: [failed], timeout: 3)
+
+    try FileManager.default.removeItem(at: fileURL)
+    let saved = expectation(description: "retry saved")
+    store.onSaveStateChange = { state in
+      XCTAssertTrue(Thread.isMainThread)
+      if state == .idle { saved.fulfill() }
+    }
+    settings.global.barHeight = 44
+    store.saveExplicitly(settings)
+    wait(for: [saved], timeout: 3)
+    XCTAssertEqual(makeStore().load().settings.global.barHeight, 44)
+  }
+
   func testSaveRoundTripsThroughTheFile() throws {
     let store = makeStore()
     var settings = SettingsFixtures.settings()
