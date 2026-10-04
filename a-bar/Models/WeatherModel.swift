@@ -1,111 +1,7 @@
 import Foundation
-import Combine
 
-/// Owns one in-flight request; settings changes invalidate its result before queuing the latest input.
-@MainActor
-final class WeatherModel: ObservableObject {
-    @Published private(set) var snapshot: WeatherSnapshot?
-    @Published private(set) var errorMessage: String?
-    @Published private(set) var lastSuccess: Date?
-    @Published private(set) var isRefreshing = false
-    var isLoading: Bool { snapshot == nil && isRefreshing }
-
-    private let load: (String) async throws -> WeatherSnapshot
-    private var task: Task<Void, Never>?
-    private var refreshTimer: Timer?
-    private var input: String?
-    private var generation = 0
-    private var isActive = false
-    private var hasQueuedRefresh = false
-
-    init(load: @escaping (String) async throws -> WeatherSnapshot = { try await WeatherModel.load($0) }) {
-        self.load = load
-    }
-
-    /// The app owns visibility; all mounted copies share this one polling schedule.
-    func start(location: String, refreshInterval: TimeInterval) {
-        let next = location.trimmingCharacters(in: .whitespacesAndNewlines)
-        let shouldRefresh = refreshTimer == nil || input != next
-        if refreshTimer?.timeInterval != refreshInterval {
-            refreshTimer?.invalidate()
-            let timer = Timer(timeInterval: refreshInterval, repeats: true) { [weak self] timer in
-                Task { @MainActor [weak self] in
-                    // A queued tick from a replaced or stopped timer must not restart polling.
-                    guard let self, self.refreshTimer === timer, let input = self.input else { return }
-                    self.refresh(location: input)
-                }
-            }
-            refreshTimer = timer
-            RunLoop.main.add(timer, forMode: .common)
-        }
-        if shouldRefresh { refresh(location: next) }
-    }
-
-    func refresh(location: String) {
-        let next = location.trimmingCharacters(in: .whitespacesAndNewlines)
-        isActive = true
-        if input != next {
-            input = next
-            generation += 1
-            snapshot = nil
-            errorMessage = nil
-            lastSuccess = nil
-            task?.cancel()
-        }
-        if let task {
-            // A CLI may ignore cancellation. Wait for it before starting the latest input.
-            if task.isCancelled { hasQueuedRefresh = true }
-            return
-        }
-        startRequest(next)
-    }
-
-    func stop() {
-        refreshTimer?.invalidate()
-        refreshTimer = nil
-        isActive = false
-        hasQueuedRefresh = false
-        generation += 1
-        task?.cancel()
-        isRefreshing = false
-    }
-
-    private func startRequest(_ input: String) {
-        let version = generation
-        let load = load
-        isRefreshing = true
-        task = Task { [weak self] in
-            let result: Result<WeatherSnapshot, Error>
-            do {
-                try Task.checkCancellation()
-                result = .success(try await load(input))
-            }
-            catch { result = .failure(error) }
-            self?.finish(result, generation: version)
-        }
-    }
-
-    private func finish(_ result: Result<WeatherSnapshot, Error>, generation version: Int) {
-        task = nil
-        isRefreshing = false
-        if isActive && version == generation {
-            switch result {
-            case .success(let value):
-                snapshot = value
-                errorMessage = nil
-                lastSuccess = Date()
-            case .failure(let error):
-                if !(error is CancellationError) && (error as? URLError)?.code != .cancelled {
-                    errorMessage = error.localizedDescription
-                }
-            }
-        }
-        if isActive && hasQueuedRefresh, let input {
-            hasQueuedRefresh = false
-            startRequest(input)
-        }
-    }
-}
+/// Current conditions for the configured city, or the IP-located one when it is empty.
+typealias WeatherModel = PollingModel<WeatherSnapshot>
 
 struct WeatherSnapshot: Equatable {
     let location: String
@@ -119,8 +15,8 @@ struct WeatherData: Equatable {
     let isNight: Bool
 }
 
-extension WeatherModel {
-    nonisolated static func load(
+enum WeatherForecast {
+    static func load(
         _ location: String, session: URLSession = .shared,
         resolveLocation: () async throws -> String = { try await locate() }
     ) async throws -> WeatherSnapshot {
@@ -132,7 +28,7 @@ extension WeatherModel {
         return WeatherSnapshot(location: resolved, data: data)
     }
 
-    private nonisolated static func locate() async throws -> String {
+    private static func locate() async throws -> String {
         let output = try await ShellExecutor.run(executable: "/usr/bin/curl", arguments: [
             "-fsS", "--max-time", "10", "http://ip-api.com/json/?fields=city,zip"
         ])
@@ -149,7 +45,7 @@ extension WeatherModel {
                       userInfo: [NSLocalizedDescriptionKey: "Could not determine your location. Set a city in Preferences."])
     }
 
-    private nonisolated static func responseData(for request: URLRequest, session: URLSession) async throws -> Data {
+    private static func responseData(for request: URLRequest, session: URLSession) async throws -> Data {
         try Task.checkCancellation()
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -158,7 +54,7 @@ extension WeatherModel {
         return data
     }
 
-    nonisolated static func fetchWeather(for location: String, session: URLSession) async throws -> WeatherData {
+    static func fetchWeather(for location: String, session: URLSession) async throws -> WeatherData {
         // Try Open-Meteo geocoding with multiple location variants to improve match rate
         var lat: Double? = nil
         var lon: Double? = nil

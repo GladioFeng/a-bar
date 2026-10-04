@@ -27,17 +27,21 @@ final class NetworkWidgetViewTests: XCTestCase {
             }
         }
         let loaded = expectation(description: "initial count")
-        let observation = model.$count.compactMap { $0 }.first().sink { _ in loaded.fulfill() }
+        let observation = model.$value.compactMap { $0 }.first().sink { _ in loaded.fulfill() }
         defer { observation.cancel(); model.stop(); pending?.resume(throwing: CancellationError()) }
-        let host = NSHostingView(rootView: GitHubWidget(model: model)
-            .environmentObject(settings).fixedSize(horizontal: true, vertical: false).frame(height: 30))
+        // Mounted in a spaced stack like the bar, so a hidden widget's slot would show as a gap.
+        let host = NSHostingView(rootView: HStack(spacing: 10) {
+            Color.clear.frame(width: 20, height: 10)
+            GitHubWidget(model: model)
+            Color.clear.frame(width: 20, height: 10)
+        }.environmentObject(settings).fixedSize(horizontal: true, vertical: false).frame(height: 30))
         let window = NSWindow(
             contentRect: NSRect(x: -10000, y: -10000, width: 120, height: 30),
             styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
         defer { window.close() }
-        model.start(executable: initial.widgets.github.ghBinaryPath,
+        model.start(input: initial.widgets.github.ghBinaryPath,
                     refreshInterval: initial.widgets.github.refreshInterval)
         await fulfillment(of: [loaded], timeout: 3)
 
@@ -50,7 +54,7 @@ final class NetworkWidgetViewTests: XCTestCase {
         func startRefresh() async {
             let started = expectation(description: "refresh started")
             onStart = { started.fulfill() }
-            model.refresh(executable: initial.widgets.github.ghBinaryPath)
+            model.refresh(input: initial.widgets.github.ghBinaryPath)
             await fulfillment(of: [started], timeout: 3)
             onStart = nil
         }
@@ -73,17 +77,18 @@ final class NetworkWidgetViewTests: XCTestCase {
                        "background refresh must not replace the count with a spinner")
         try await finish(.failure(URLError(.notConnectedToInternet)))
         XCTAssertGreaterThan(renderedSize().width, cached.width + 5, "failure adds a visible warning")
-        XCTAssertEqual(model.count, 9)
+        XCTAssertEqual(model.value, 9)
 
         await startRefresh()
         try await finish(.success(0))
         let hidden = renderedSize().width
         XCTAssertLessThan(hidden, cached.width)
+        XCTAssertEqual(hidden, 50, accuracy: 0.5, "a hidden widget must not add a gap to the bar")
         await startRefresh()
         try await finish(.failure(URLError(.notConnectedToInternet)))
         XCTAssertGreaterThan(renderedSize().width, hidden + 5,
                              "an error must remain visible even when the cached count is zero")
-        XCTAssertEqual(model.count, 0)
+        XCTAssertEqual(model.value, 0)
     }
 
     @MainActor
@@ -144,12 +149,12 @@ final class NetworkWidgetViewTests: XCTestCase {
         _ = widths()
         XCTAssertTrue(githubRequest.inputs.isEmpty, "mounting a view must not own the polling schedule")
         XCTAssertTrue(weatherRequest.inputs.isEmpty)
-        await waitForStart(githubRequest) { github.start(executable: "gh", refreshInterval: 60) }
-        await waitForStart(weatherRequest) { weather.start(location: "Lyon", refreshInterval: 60) }
+        await waitForStart(githubRequest) { github.start(input: "gh", refreshInterval: 60) }
+        await waitForStart(weatherRequest) { weather.start(input: "Lyon", refreshInterval: 60) }
         await finish(.success(9), githubRequest, github.$isRefreshing)
         await finish(.success(snapshot(20)), weatherRequest, weather.$isRefreshing)
-        github.start(executable: "gh", refreshInterval: 60)
-        weather.start(location: "Lyon", refreshInterval: 60)
+        github.start(input: "gh", refreshInterval: 60)
+        weather.start(input: "Lyon", refreshInterval: 60)
         XCTAssertFalse(github.isRefreshing)
         XCTAssertFalse(weather.isRefreshing)
         XCTAssertEqual(githubRequest.inputs, ["gh"])
@@ -157,26 +162,26 @@ final class NetworkWidgetViewTests: XCTestCase {
         let cachedWidths = widths()
         XCTAssertEqual(cachedWidths[0], cachedWidths[1], accuracy: 0.5)
 
-        await waitForStart(githubRequest) { github.refresh(executable: "gh") }
+        await waitForStart(githubRequest) { github.refresh(input: "gh") }
         XCTAssertFalse(github.isLoading)
         XCTAssertEqual(widths()[1], cachedWidths[1], accuracy: 0.5)
         await finish(.failure(URLError(.notConnectedToInternet)), githubRequest, github.$isRefreshing)
         let githubErrorWidths = widths()
         XCTAssertGreaterThan(githubErrorWidths[0], cachedWidths[0] + 5)
         XCTAssertEqual(githubErrorWidths[0], githubErrorWidths[1], accuracy: 0.5)
-        XCTAssertEqual(github.count, 9)
+        XCTAssertEqual(github.value, 9)
 
-        await waitForStart(weatherRequest) { weather.refresh(location: "Lyon") }
+        await waitForStart(weatherRequest) { weather.refresh(input: "Lyon") }
         XCTAssertFalse(weather.isLoading)
         XCTAssertEqual(widths()[1], githubErrorWidths[1], accuracy: 0.5)
         await finish(.failure(URLError(.notConnectedToInternet)), weatherRequest, weather.$isRefreshing)
         let errorWidths = widths()
         XCTAssertGreaterThan(errorWidths[0], githubErrorWidths[0] + 5)
         XCTAssertEqual(errorWidths[0], errorWidths[1], accuracy: 0.5)
-        XCTAssertEqual(weather.snapshot, snapshot(20))
+        XCTAssertEqual(weather.value, snapshot(20))
 
-        await waitForStart(githubRequest) { github.refresh(executable: "gh") }
-        await waitForStart(weatherRequest) { weather.refresh(location: "Lyon") }
+        await waitForStart(githubRequest) { github.refresh(input: "gh") }
+        await waitForStart(weatherRequest) { weather.refresh(input: "Lyon") }
         windows[0].contentView = nil
         windows[0].close()
         _ = widths()
@@ -184,14 +189,14 @@ final class NetworkWidgetViewTests: XCTestCase {
         XCTAssertTrue(weather.isRefreshing)
         await finish(.success(10), githubRequest, github.$isRefreshing)
         await finish(.success(snapshot(21)), weatherRequest, weather.$isRefreshing)
-        XCTAssertEqual(github.count, 10)
-        XCTAssertEqual(weather.snapshot, snapshot(21))
+        XCTAssertEqual(github.value, 10)
+        XCTAssertEqual(weather.value, snapshot(21))
         XCTAssertNil(github.errorMessage)
         XCTAssertNil(weather.errorMessage)
         XCTAssertLessThan(widths()[1], errorWidths[1])
 
-        await waitForStart(githubRequest) { github.refresh(executable: "gh") }
-        await waitForStart(weatherRequest) { weather.refresh(location: "Lyon") }
+        await waitForStart(githubRequest) { github.refresh(input: "gh") }
+        await waitForStart(weatherRequest) { weather.refresh(input: "Lyon") }
         let githubSuccess = github.lastSuccess
         let weatherSuccess = weather.lastSuccess
         windows[1].contentView = nil
@@ -200,8 +205,8 @@ final class NetworkWidgetViewTests: XCTestCase {
         weather.stop()
         await finish(.success(99), githubRequest, github.$isRefreshing)
         await finish(.success(snapshot(99)), weatherRequest, weather.$isRefreshing)
-        XCTAssertEqual(github.count, 10)
-        XCTAssertEqual(weather.snapshot, snapshot(21))
+        XCTAssertEqual(github.value, 10)
+        XCTAssertEqual(weather.value, snapshot(21))
         XCTAssertEqual(github.lastSuccess, githubSuccess)
         XCTAssertEqual(weather.lastSuccess, weatherSuccess)
         XCTAssertEqual(githubRequest.maximumActiveCount, 1)

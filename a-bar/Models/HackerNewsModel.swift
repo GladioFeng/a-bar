@@ -1,86 +1,10 @@
 import Foundation
-import Combine
 
-@MainActor
-final class HackerNewsModel: ObservableObject {
-    @Published private(set) var stories: [HNStory]?
-    @Published private(set) var currentIndex = 0
-    @Published private(set) var errorMessage: String?
-    @Published private(set) var lastSuccess: Date?
-    @Published private(set) var isRefreshing = false
-    var isLoading: Bool { stories == nil && isRefreshing }
-    var currentStory: HNStory? {
-        guard let stories, stories.indices.contains(currentIndex) else { return nil }
-        return stories[currentIndex]
-    }
+/// The front page, polled once for every bar. The source has no setting, so its input is empty.
+typealias HackerNewsModel = PollingModel<[HNStory]>
 
-    private let load: () async throws -> [HNStory]
-    private var task: Task<Void, Never>?
-    private var generation = 0
-    private var isActive = false
-    private var hasQueuedRefresh = false
-
-    init(load: @escaping () async throws -> [HNStory] = { try await HackerNewsModel.load() }) {
-        self.load = load
-    }
-
-    func refresh() {
-        isActive = true
-        if let task {
-            if task.isCancelled { hasQueuedRefresh = true }
-            return
-        }
-        let version = generation
-        let load = load
-        isRefreshing = true
-        task = Task { [weak self] in
-            let result: Result<[HNStory], Error>
-            do {
-                try Task.checkCancellation()
-                result = .success(try await load())
-            }
-            catch { result = .failure(error) }
-            self?.finish(result, generation: version)
-        }
-    }
-
-    func stop() {
-        isActive = false
-        hasQueuedRefresh = false
-        generation += 1
-        task?.cancel()
-        isRefreshing = false
-    }
-
-    func rotate() {
-        guard let stories, !stories.isEmpty else { return }
-        currentIndex = (currentIndex + 1) % stories.count
-    }
-
-    private func finish(_ result: Result<[HNStory], Error>, generation version: Int) {
-        task = nil
-        isRefreshing = false
-        if isActive && version == generation {
-            switch result {
-            case .success(let value):
-                let selectedID = currentStory?.objectID
-                currentIndex = value.firstIndex { $0.objectID == selectedID } ?? 0
-                stories = value
-                errorMessage = nil
-                lastSuccess = Date()
-            case .failure(let error):
-                if !(error is CancellationError) && (error as? URLError)?.code != .cancelled {
-                    errorMessage = error.localizedDescription
-                }
-            }
-        }
-        if isActive && hasQueuedRefresh {
-            hasQueuedRefresh = false
-            refresh()
-        }
-    }
-
-    nonisolated static func load(session: URLSession = .shared) async throws -> [HNStory] {
+enum HackerNewsFeed {
+    static func load(session: URLSession = .shared) async throws -> [HNStory] {
         let url = URL(string: "https://hn.algolia.com/api/v1/search?tags=front_page")!
         let (data, response) = try await session.data(from: url)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -88,6 +12,20 @@ final class HackerNewsModel: ObservableObject {
         }
         let result = try JSONDecoder().decode(HNResponse.self, from: data)
         return result.hits.filter { $0.title != nil && !$0.title!.isEmpty }
+    }
+}
+
+/// Which story a widget shows. Selection is kept by id so a refresh that reorders the
+/// front page does not jump to another story, and every bar can rotate on its own.
+enum HackerNewsRotation {
+    static func current(_ id: String?, in stories: [HNStory]) -> HNStory? {
+        stories.first { $0.objectID == id } ?? stories.first
+    }
+
+    static func next(after id: String?, in stories: [HNStory]) -> HNStory? {
+        guard !stories.isEmpty else { return nil }
+        let index = stories.firstIndex { $0.objectID == id } ?? 0
+        return stories[(index + 1) % stories.count]
     }
 }
 

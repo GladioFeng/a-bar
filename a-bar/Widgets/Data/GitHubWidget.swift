@@ -9,7 +9,8 @@ struct GitHubWidget: View {
     init(model: GitHubModel) {
         _model = ObservedObject(wrappedValue: model)
     }
-    private var notificationCount: Int { model.count ?? 0 }
+    private var count: Int? { model.value }
+    private var notificationCount: Int { count ?? 0 }
     
     private var githubSettings: GitHubWidgetSettings {
         settings.settings.widgets.github
@@ -20,11 +21,10 @@ struct GitHubWidget: View {
     }
     
     var body: some View {
-        // The shared model keeps polling when a zero count hides this content.
-        HStack(spacing: 0) {
-            if githubSettings.hideWhenNoNotifications && model.count == 0 && model.errorMessage == nil {
-                EmptyView()
-            } else {
+        // The shared model keeps polling when a zero count hides this content. An empty
+        // `Group` takes no slot in the bar's stack, so a hidden widget leaves no extra gap.
+        Group {
+            if !(githubSettings.hideWhenNoNotifications && count == 0 && model.errorMessage == nil) {
                 BaseWidgetView(
                     onClick: openNotifications,
                     onRightClick: refreshNotifications
@@ -55,11 +55,11 @@ struct GitHubWidget: View {
     }
     
     private var notificationText: String {
-        model.count.map(WidgetLabels.notificationCount) ?? "--"
+        count.map(WidgetLabels.notificationCount) ?? "--"
     }
     
     private func refreshNotifications() {
-        model.refresh(executable: githubSettings.ghBinaryPath)
+        model.refresh(input: githubSettings.ghBinaryPath)
     }
 
     private func openNotifications() {

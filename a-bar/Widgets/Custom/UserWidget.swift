@@ -26,24 +26,17 @@ struct UserWidget: View {
 
   @EnvironmentObject var settings: SettingsManager
 
-  @State private var parsedOutput: XBarParsedOutput = .empty
-  @State private var isLoading = true
-  @State private var errorMessage: String? = nil
-  @State private var currentHeaderIndex = 0
+  @StateObject private var runner: UserWidgetRunner
   @State private var anchorView: NSView?
-  @State private var menuActionHandler = XBarMenuActionHandler()
-  @State private var refreshTimer: Timer?
-  @State private var cycleTimer: Timer?
-  @State private var isRefreshingOutput = false
-  @State private var hasQueuedRefresh = false
-  @State private var refreshTask: Task<Void, Never>?
-  @State private var isVisible = false
 
-  /// Minimum custom widget refresh interval.
-  private static let minimumRefreshInterval: TimeInterval = 1
+  private var parsedOutput: XBarParsedOutput { runner.parsedOutput }
+  private var menuActionHandler: XBarMenuActionHandler { runner.menuActionHandler }
 
-  /// Minimum header cycle duration.
-  private static let minimumCycleDuration: TimeInterval = 1
+  init(config: UserWidgetDefinition, position: BarPosition = .top) {
+    self.config = config
+    self.position = position
+    _runner = StateObject(wrappedValue: UserWidgetRunner(config: config))
+  }
 
   private var globalSettings: GlobalSettings {
     settings.settings.global
@@ -99,7 +92,7 @@ struct UserWidget: View {
   private var currentHeaderItem: XBarLineItem? {
     let headers = parsedOutput.headerLines
     guard !headers.isEmpty else { return nil }
-    let index = currentHeaderIndex % headers.count
+    let index = runner.currentHeaderIndex % headers.count
     return headers[index]
   }
 
@@ -109,18 +102,13 @@ struct UserWidget: View {
     return parsedOutput.headerLines.filter({ $0.params.dropdown }).count > 1
   }
 
-  private var safeRefreshInterval: TimeInterval {
-    max(Self.minimumRefreshInterval, config.refreshInterval)
-  }
-
-  private var safeCycleDuration: TimeInterval {
-    max(Self.minimumCycleDuration, config.cycleDuration)
-  }
-
   var body: some View {
-    HStack(spacing: 0) {
+    // No lifecycle modifiers: SwiftUI does not deliver them to a `Group` that renders nothing,
+    // which is exactly when a hidden widget must keep polling. `runner` does that instead, and
+    // an empty `Group` takes no slot in the bar's stack, so a hidden widget leaves no gap.
+    Group {
       if config.isActive {
-        if errorMessage != nil {
+        if runner.errorMessage != nil {
           // Error state: always visible regardless of hideWhenEmpty
           BaseWidgetView(
             backgroundColor: errorBackgroundColor,
@@ -136,12 +124,12 @@ struct UserWidget: View {
             }
           }
           .background(ViewAnchor(nsView: $anchorView))
-        } else if !(config.hideWhenEmpty && parsedOutput.headerLines.isEmpty && !isLoading) {
+        } else if !(config.hideWhenEmpty && parsedOutput.headerLines.isEmpty && !runner.isLoading) {
           BaseWidgetView(
             backgroundColor: customBackgroundColor,
             onClick: hasDropdown ? showDropdownMenu : nil
           ) {
-            if isLoading {
+            if runner.isLoading {
               ProgressView()
                 .scaleEffect(0.4)
                 .frame(width: 12, height: 12)
@@ -155,39 +143,6 @@ struct UserWidget: View {
           }
           .background(ViewAnchor(nsView: $anchorView))
         }
-      }
-    }
-    .onAppear {
-      isVisible = true
-      menuActionHandler.onRefresh = { refreshOutput() }
-      restartRefreshTimer()
-      restartCycleTimer()
-      if config.isActive {
-        refreshOutput()
-      } else {
-        isLoading = false
-      }
-    }
-    .onDisappear {
-      isVisible = false
-      stopTimers()
-      refreshTask?.cancel()
-      refreshTask = nil
-      isRefreshingOutput = false
-      hasQueuedRefresh = false
-      menuActionHandler.onRefresh = nil
-    }
-    .onChange(of: config.refreshInterval) { _ in
-      restartRefreshTimer()
-    }
-    .onChange(of: config.cycleDuration) { _ in
-      restartCycleTimer()
-    }
-    .onReceive(
-      NotificationCenter.default.publisher(for: .refreshUserWidget)
-    ) { notification in
-      if let widgetId = notification.userInfo?["widgetId"] as? UUID, widgetId == config.id {
-        refreshOutput()
       }
     }
   }
@@ -253,7 +208,7 @@ struct UserWidget: View {
   }
 
   private func showErrorMenu() {
-    guard let view = anchorView, let errMsg = errorMessage else { return }
+    guard let view = anchorView, let errMsg = runner.errorMessage else { return }
 
     let menu = NSMenu()
     menu.autoenablesItems = false
@@ -282,7 +237,6 @@ struct UserWidget: View {
 
     menu.addItem(.separator())
     let handler = menuActionHandler
-    handler.onRefresh = { refreshOutput() }
     let retryWrapper = NSMenuItem()
     retryWrapper.title = "Retry"
     retryWrapper.target = handler
@@ -296,102 +250,146 @@ struct UserWidget: View {
       : NSPoint(x: 0, y: 0)
     menu.popUp(positioning: nil, at: anchorPoint, in: view)
   }
+}
 
-  private func restartRefreshTimer() {
-    refreshTimer?.invalidate()
-    refreshTimer = nil
+/// Runs one custom widget's script for as long as the widget is in the bar.
+///
+/// A `@StateObject` lives exactly as long as its view's identity, whether or not the view
+/// renders anything, so polling continues while `hideWhenEmpty` hides the widget and stops
+/// when the widget is removed. Every input the runner uses is part of `Identity`, so a changed
+/// command, activation or interval replaces the runner instead of reconfiguring it. Main thread
+/// only.
+final class UserWidgetRunner: ObservableObject {
+  struct Identity: Hashable {
+    let id: UUID
+    let command: String
+    let isActive: Bool
+    let refreshInterval: TimeInterval
+    let cycleDuration: TimeInterval
 
-    guard config.isActive else { return }
-
-    let timer = Timer(timeInterval: safeRefreshInterval, repeats: true) { _ in
-      refreshOutput()
+    init(_ config: UserWidgetDefinition) {
+      id = config.id
+      command = config.command
+      isActive = config.isActive
+      refreshInterval = config.refreshInterval
+      cycleDuration = config.cycleDuration
     }
-    RunLoop.main.add(timer, forMode: .common)
-    refreshTimer = timer
   }
 
-  private func restartCycleTimer() {
-    cycleTimer?.invalidate()
-    cycleTimer = nil
-    guard config.isActive else { return }
-    let timer = Timer(timeInterval: safeCycleDuration, repeats: true) { _ in
-      if parsedOutput.headerLines.count > 1 {
-        currentHeaderIndex = (currentHeaderIndex + 1) % parsedOutput.headerLines.count
-      }
+  /// Minimum custom widget refresh interval.
+  private static let minimumRefreshInterval: TimeInterval = 1
+
+  /// Minimum header cycle duration.
+  private static let minimumCycleDuration: TimeInterval = 1
+
+  @Published private(set) var parsedOutput: XBarParsedOutput = .empty
+  @Published private(set) var isLoading: Bool
+  @Published private(set) var errorMessage: String?
+  @Published private(set) var currentHeaderIndex = 0
+
+  let menuActionHandler = XBarMenuActionHandler()
+
+  private let id: UUID
+  private let command: String
+  private let isRunnable: Bool
+  private var refreshTimer: Timer?
+  private var cycleTimer: Timer?
+  private var refreshObserver: NSObjectProtocol?
+  private var isRefreshing = false
+  private var hasQueuedRefresh = false
+
+  init(config: UserWidgetDefinition) {
+    id = config.id
+    command = config.command.trimmingCharacters(in: .whitespacesAndNewlines)
+    // An inactive widget or an empty command has nothing to run, so nothing to wait for.
+    isRunnable = config.isActive && !command.isEmpty
+    isLoading = isRunnable
+    guard isRunnable else { return }
+
+    menuActionHandler.onRefresh = { [weak self] in self?.refresh() }
+    refreshObserver = NotificationCenter.default.addObserver(
+      forName: .refreshUserWidget, object: nil, queue: .main
+    ) { [weak self] notification in
+      guard let self, notification.userInfo?["widgetId"] as? UUID == self.id else { return }
+      self.refresh()
     }
-    RunLoop.main.add(timer, forMode: .common)
-    cycleTimer = timer
+    refreshTimer = Self.schedule(every: max(Self.minimumRefreshInterval, config.refreshInterval)) {
+      [weak self] in self?.refresh()
+    }
+    cycleTimer = Self.schedule(every: max(Self.minimumCycleDuration, config.cycleDuration)) {
+      [weak self] in self?.cycleHeader()
+    }
+    refresh()
   }
 
-  private func stopTimers() {
+  deinit {
     refreshTimer?.invalidate()
-    refreshTimer = nil
     cycleTimer?.invalidate()
-    cycleTimer = nil
+    if let refreshObserver { NotificationCenter.default.removeObserver(refreshObserver) }
   }
 
-  private func refreshOutput() {
-    guard isVisible, config.isActive else { return }
-    if isRefreshingOutput {
+  private static func schedule(every interval: TimeInterval, _ action: @escaping () -> Void) -> Timer {
+    let timer = Timer(timeInterval: interval, repeats: true) { _ in action() }
+    RunLoop.main.add(timer, forMode: .common)
+    return timer
+  }
+
+  private func cycleHeader() {
+    let count = parsedOutput.headerLines.count
+    if count > 1 { currentHeaderIndex = (currentHeaderIndex + 1) % count }
+  }
+
+  func refresh() {
+    guard isRunnable else { return }
+    if isRefreshing {
       hasQueuedRefresh = true
       return
     }
+    isRefreshing = true
 
-    let command = config.command.trimmingCharacters(in: .whitespacesAndNewlines)
-    if command.isEmpty {
-      errorMessage = nil
+    let command = command
+    // Weak, so a removed widget cannot publish a late result or start a queued command.
+    Task { @MainActor [weak self] in
+      let result = await ShellExecutor.runWidget(command)
+      self?.finish(result)
+    }
+  }
+
+  private func finish(_ result: ShellExecutor.WidgetRunResult) {
+    defer {
+      isRefreshing = false
+      if hasQueuedRefresh {
+        hasQueuedRefresh = false
+        refresh()
+      }
+    }
+
+    if !result.succeeded {
+      // Build an informative error message from stderr and exit code
+      let stderrTrimmed = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+      if let executionError = result.executionError {
+        errorMessage = executionError
+      } else if result.exitCode == -1 {
+        // Process launch failure — stderr already contains the description
+        errorMessage = stderrTrimmed.isEmpty
+          ? "Script could not be started."
+          : stderrTrimmed
+      } else {
+        let codeNote = "Exit code: \(result.exitCode)"
+        errorMessage = stderrTrimmed.isEmpty ? codeNote : "\(codeNote)\n\(stderrTrimmed)"
+      }
       parsedOutput = .empty
       currentHeaderIndex = 0
       isLoading = false
-      hasQueuedRefresh = false
       return
     }
 
-    isRefreshingOutput = true
-
-    refreshTask = Task {
-      guard !Task.isCancelled else { return }
-      let result = await ShellExecutor.runWidget(command)
-      await MainActor.run {
-        // A removed widget cannot publish a late result or start another queued command.
-        guard !Task.isCancelled, isVisible else { return }
-        defer {
-          refreshTask = nil
-          isRefreshingOutput = false
-          if hasQueuedRefresh {
-            hasQueuedRefresh = false
-            refreshOutput()
-          }
-        }
-
-        if !result.succeeded {
-          // Build an informative error message from stderr and exit code
-          let stderrTrimmed = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-          if let executionError = result.executionError {
-            errorMessage = executionError
-          } else if result.exitCode == -1 {
-            // Process launch failure — stderr already contains the description
-            errorMessage = stderrTrimmed.isEmpty
-              ? "Script could not be started."
-              : stderrTrimmed
-          } else {
-            let codeNote = "Exit code: \(result.exitCode)"
-            errorMessage = stderrTrimmed.isEmpty ? codeNote : "\(codeNote)\n\(stderrTrimmed)"
-          }
-          parsedOutput = .empty
-          currentHeaderIndex = 0
-          isLoading = false
-          return
-        }
-
-        errorMessage = nil
-        let newOutput = XBarParser.parse(result.stdout)
-        if newOutput.headerLines.count != parsedOutput.headerLines.count {
-          currentHeaderIndex = 0
-        }
-        parsedOutput = newOutput
-        isLoading = false
-      }
+    errorMessage = nil
+    let newOutput = XBarParser.parse(result.stdout)
+    if newOutput.headerLines.count != parsedOutput.headerLines.count {
+      currentHeaderIndex = 0
     }
+    parsedOutput = newOutput
+    isLoading = false
   }
 }

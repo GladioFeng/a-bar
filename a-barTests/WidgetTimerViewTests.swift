@@ -47,16 +47,25 @@ final class WidgetTimerViewTests: XCTestCase {
   }
 
   @MainActor
-  func testHiddenCustomWidgetKeepsItsRefreshTimer() async throws {
+  func testHiddenCustomWidgetKeepsItsRefreshTimerWithoutLeavingAGap() async throws {
     _ = NSApplication.shared
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let settings = SettingsManager(store: SettingsStore(fileURL: directory.appendingPathComponent("settings.json")))
     let marker = directory.appendingPathComponent("runs")
+    let inactiveMarker = directory.appendingPathComponent("inactive-runs")
     let definition = UserWidgetDefinition(
       command: "printf x >> '" + marker.path + "'", refreshInterval: 1, hideWhenEmpty: true)
-    let host = NSHostingView(rootView: UserWidget(config: definition).environmentObject(settings))
+    let inactive = UserWidgetDefinition(
+      command: "printf x >> '" + inactiveMarker.path + "'", refreshInterval: 1, isActive: false)
+    // Widgets sit in a spaced stack in the bar; one that renders nothing must not take a slot.
+    let host = NSHostingView(rootView: HStack(spacing: 10) {
+      Color.clear.frame(width: 20, height: 10)
+      UserWidget(config: definition)
+      UserWidget(config: inactive)
+      Color.clear.frame(width: 20, height: 10)
+    }.environmentObject(settings))
     let window = NSWindow(
       contentRect: NSRect(x: -10000, y: -10000, width: 200, height: 40),
       styleMask: .borderless, backing: .buffered, defer: false)
@@ -70,8 +79,46 @@ final class WidgetTimerViewTests: XCTestCase {
     host.layoutSubtreeIfNeeded()
     // Empty stdout hides the content after the first run; the next timer must still fire.
     try await Task.sleep(nanoseconds: 2_500_000_000)
-    XCTAssertEqual(host.fittingSize.width, 0)
+    host.layoutSubtreeIfNeeded()
+    XCTAssertEqual(host.fittingSize.width, 50, accuracy: 0.5,
+                   "hidden and inactive custom widgets must not add a gap to the bar")
     XCTAssertGreaterThanOrEqual(try Data(contentsOf: marker).count, 2)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: inactiveMarker.path),
+                   "an inactive custom widget must not run its command")
+  }
+
+  @MainActor
+  func testRemovedCustomWidgetStopsPolling() async throws {
+    _ = NSApplication.shared
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let settings = SettingsManager(store: SettingsStore(fileURL: directory.appendingPathComponent("settings.json")))
+    let marker = directory.appendingPathComponent("runs")
+    let definition = UserWidgetDefinition(
+      command: "printf x >> '" + marker.path + "'", refreshInterval: 1, hideWhenEmpty: true)
+    let host = NSHostingView(rootView: AnyView(UserWidget(config: definition).environmentObject(settings)))
+    let window = NSWindow(
+      contentRect: NSRect(x: -10000, y: -10000, width: 200, height: 40),
+      styleMask: .borderless, backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    defer {
+      window.contentView = nil
+      window.close()
+      settings.flush()
+    }
+    host.layoutSubtreeIfNeeded()
+    try await Task.sleep(nanoseconds: 1_300_000_000)
+    XCTAssertGreaterThanOrEqual(try Data(contentsOf: marker).count, 2)
+
+    // Polling is tied to the widget's identity, not to it appearing, so removal must end it.
+    host.rootView = AnyView(EmptyView())
+    host.layoutSubtreeIfNeeded()
+    try await Task.sleep(nanoseconds: 300_000_000)
+    let runsAtRemoval = try Data(contentsOf: marker).count
+    try await Task.sleep(nanoseconds: 1_500_000_000)
+    XCTAssertEqual(try Data(contentsOf: marker).count, runsAtRemoval)
   }
 
   @MainActor

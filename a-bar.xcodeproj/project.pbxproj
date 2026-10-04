@@ -19,7 +19,9 @@
 		T1000402 /* HackerNewsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000402 /* HackerNewsModel.swift */; };
 		A1000402 /* HackerNewsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000402 /* HackerNewsModel.swift */; };
 		T1000401 /* GitHubModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000401 /* GitHubModel.swift */; };
+		T1000411 /* PollingModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000409 /* PollingModel.swift */; };
 		A1000401 /* GitHubModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000401 /* GitHubModel.swift */; };
+		A1000409 /* PollingModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000409 /* PollingModel.swift */; };
 		T1000400 /* WeatherModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000400 /* WeatherModel.swift */; };
 		A1000400 /* WeatherModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000400 /* WeatherModel.swift */; };
 		A1000263 /* BaseWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000062 /* BaseWidgetView.swift */; };
@@ -232,6 +234,7 @@
 		B1000403 /* NetworkRefreshWarning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkRefreshWarning.swift; sourceTree = "<group>"; };
 		B1000402 /* HackerNewsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HackerNewsModel.swift; sourceTree = "<group>"; };
 		B1000401 /* GitHubModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubModel.swift; sourceTree = "<group>"; };
+		B1000409 /* PollingModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollingModel.swift; sourceTree = "<group>"; };
 		B1000400 /* WeatherModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherModel.swift; sourceTree = "<group>"; };
 		B1000352 /* WidgetPopoverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetPopoverTests.swift"; sourceTree = "<group>"; };
 		0F3AA90E2F392ED300554810 /* HackerNewsWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HackerNewsWidget.swift; sourceTree = "<group>"; };
@@ -440,6 +443,7 @@
 			children = (
 				B1000402 /* HackerNewsModel.swift */,
 				B1000401 /* GitHubModel.swift */,
+				B1000409 /* PollingModel.swift */,
 				B1000400 /* WeatherModel.swift */,
 				0F5602492F338BF200BBEA53 /* Profile.swift */,
 				C2000001 /* AerospaceTypes.swift */,
@@ -787,6 +791,7 @@
 				A1000403 /* NetworkRefreshWarning.swift in Sources */,
 				A1000402 /* HackerNewsModel.swift in Sources */,
 				A1000401 /* GitHubModel.swift in Sources */,
+				A1000409 /* PollingModel.swift in Sources */,
 				A1000400 /* WeatherModel.swift in Sources */,
 				A1000140 /* WidgetCommandDispatch.swift in Sources */,
 				A1000139 /* UserWidgetManager.swift in Sources */,
@@ -895,6 +900,7 @@
 				T1000403 /* NetworkRefreshWarning.swift in Sources */,
 				T1000402 /* HackerNewsModel.swift in Sources */,
 				T1000401 /* GitHubModel.swift in Sources */,
+				T1000411 /* PollingModel.swift in Sources */,
 				T1000400 /* WeatherModel.swift in Sources */,
 				A1000263 /* BaseWidgetView.swift in Sources */,
 				A1000262 /* MicWidget.swift in Sources */,
@@ -1154,7 +1160,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.0;
+				MARKETING_VERSION = 1.6.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.jeantinland.a-bar";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -1184,7 +1190,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.0;
+				MARKETING_VERSION = 1.6.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.jeantinland.a-bar";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

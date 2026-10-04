@@ -29,7 +29,7 @@ struct WeatherWidget: View {
                 ProgressView()
                     .scaleEffect(0.5)
                     .frame(width: 16, height: 16)
-            } else if let snapshot = model.snapshot {
+            } else if let snapshot = model.value {
                 let data = snapshot.data
                 HStack(spacing: 4) {
                     if weatherSettings.showIcon {
@@ -62,7 +62,7 @@ struct WeatherWidget: View {
     }
     
     private func refreshWeather() {
-        model.refresh(location: weatherSettings.customLocation)
+        model.refresh(input: weatherSettings.customLocation)
     }
 
     private func temperatureString(_ temp: Int) -> String {

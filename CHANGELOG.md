@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 _No changes yet._
 
+## v1.6.1 - 2026-10-04
+
+- fix: harden settings editing, network refreshes and widget lifecycles
+- fix: share one polling model for network widgets and stop hidden widgets leaving bar gaps
+
 ## v1.6.0 - 2026-09-21
 
 - chore: deadcode removal

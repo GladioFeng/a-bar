@@ -38,8 +38,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   let systemInfoService = SystemInfoService.shared
   let bluetoothService = BluetoothService.shared
   let wifiService = WifiService.shared
-  let githubModel = GitHubModel()
-  let weatherModel = WeatherModel()
+  let networkModels = NetworkWidgetModels()
 
   /// Layout manager for widget arrangement
   let layoutManager = LayoutManager.shared
@@ -113,8 +112,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     barWindows.values.forEach { $0.close() }
     yabaiService.stop()
     aerospaceService.stop()
-    githubModel.stop()
-    weatherModel.stop()
+    networkModels.stop()
     runningWindowManager = nil
     runningWindowManagerPath = nil
   }
@@ -238,8 +236,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         screen: screens[key.displayIndex],
         displayIndex: key.displayIndex,
         position: key.position,
-        githubModel: githubModel,
-        weatherModel: weatherModel
+        networkModels: networkModels
       )
       barWindows[key] = barWindow
       barWindow.makeKeyAndOrderFront(nil)
@@ -286,16 +283,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let widgets = visibleWidgets
     let settings = settingsManager.settings.widgets
     // All bars share one request and timer per network source. A window rebuild must not stop them.
-    if widgets.contains(.github) {
-      githubModel.start(executable: settings.github.ghBinaryPath, refreshInterval: settings.github.refreshInterval)
-    } else {
-      githubModel.stop()
-    }
-    if widgets.contains(.weather) {
-      weatherModel.start(location: settings.weather.customLocation, refreshInterval: settings.weather.refreshInterval)
-    } else {
-      weatherModel.stop()
-    }
+    poll(networkModels.github, when: widgets.contains(.github),
+         input: settings.github.ghBinaryPath, every: settings.github.refreshInterval)
+    poll(networkModels.weather, when: widgets.contains(.weather),
+         input: settings.weather.customLocation, every: settings.weather.refreshInterval)
+    poll(networkModels.hackerNews, when: widgets.contains(.hackerNews),
+         input: "", every: settings.hackerNews.refreshInterval)
     let configuration = BarWindowPlan.ServiceConfiguration(
       widgets: widgets, settings: settings)
     let previous = appliedServiceConfiguration
@@ -323,6 +316,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       }
     }
     appliedServiceConfiguration = configuration
+  }
+
+  private func poll<Value>(
+    _ model: PollingModel<Value>, when visible: Bool, input: String, every interval: TimeInterval
+  ) {
+    if visible { model.start(input: input, refreshInterval: interval) } else { model.stop() }
   }
 
   // Subscribe to settings changes to update bar windows and launch at login status

@@ -145,8 +145,7 @@ final class WidgetPopoverManager: NSObject, ObservableObject {
       if let provider = self.contentProvider {
         let view = provider()
         if self.host == nil {
-          let h = NSHostingController(rootView: view)
-          h.view.wantsLayer = true
+          let h = Self.makeHost(view)
           h.view.layer?.masksToBounds = false
           self.host = h
           panel.contentView = h.view
@@ -242,12 +241,21 @@ final class WidgetPopoverManager: NSObject, ObservableObject {
     }
     // if panel already exists, refresh host
     if let panel = panel, let provider = contentProvider {
-      let view = provider()
-      let h = NSHostingController(rootView: view)
-      h.view.wantsLayer = true
+      let h = Self.makeHost(provider())
       host = h
       panel.contentView = h.view
     }
+  }
+
+  /// `layoutPanel()` owns the panel frame. The default `.standardBounds` also installs
+  /// required min/max constraints, which resize the window back to the content on the
+  /// next layout pass and undo `minWidth` and `maxHeight`. Intrinsic size alone still
+  /// lets `fittingSize` measure the content.
+  private static func makeHost(_ view: AnyView) -> NSHostingController<AnyView> {
+    let host = NSHostingController(rootView: view)
+    host.sizingOptions = .intrinsicContentSize
+    host.view.wantsLayer = true
+    return host
   }
 }
 

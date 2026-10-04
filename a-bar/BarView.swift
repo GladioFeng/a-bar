@@ -5,8 +5,7 @@ struct BarView: View {
   let displayIndex: Int
   let screen: NSScreen
   let position: BarPosition
-  let githubModel: GitHubModel
-  let weatherModel: WeatherModel
+  let networkModels: NetworkWidgetModels
 
   @EnvironmentObject var settings: SettingsManager
   @EnvironmentObject var layoutManager: LayoutManager
@@ -32,7 +31,7 @@ struct BarView: View {
         HStack(spacing: globalSettings.barElementGap) {
           ForEach(leftWidgets) { widget in
             WidgetContainer(widget: widget, displayIndex: displayIndex, position: position,
-                            githubModel: githubModel, weatherModel: weatherModel)
+                            networkModels: networkModels)
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -41,7 +40,7 @@ struct BarView: View {
         HStack(spacing: globalSettings.barElementGap) {
           ForEach(centerWidgets) { widget in
             WidgetContainer(widget: widget, displayIndex: displayIndex, position: position,
-                            githubModel: githubModel, weatherModel: weatherModel)
+                            networkModels: networkModels)
           }
         }
 
@@ -49,7 +48,7 @@ struct BarView: View {
         HStack(spacing: globalSettings.barElementGap) {
           ForEach(rightWidgets) { widget in
             WidgetContainer(widget: widget, displayIndex: displayIndex, position: position,
-                            githubModel: githubModel, weatherModel: weatherModel)
+                            networkModels: networkModels)
           }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -121,13 +120,34 @@ struct BarView: View {
 
 }
 
+/// Network sources shared by every bar, so displays never duplicate requests or timers.
+/// The app starts and stops each one from the set of visible widgets.
+struct NetworkWidgetModels {
+  let github: GitHubModel
+  let weather: WeatherModel
+  let hackerNews: HackerNewsModel
+
+  @MainActor
+  init() {
+    github = GitHubModel(load: GitHubNotifications.load)
+    weather = WeatherModel(load: { try await WeatherForecast.load($0) })
+    hackerNews = HackerNewsModel(load: { _ in try await HackerNewsFeed.load() })
+  }
+
+  @MainActor
+  func stop() {
+    github.stop()
+    weather.stop()
+    hackerNews.stop()
+  }
+}
+
 /// Container view that renders the appropriate widget based on configuration
 struct WidgetContainer: View {
   let widget: WidgetInstance
   let displayIndex: Int
   let position: BarPosition
-  let githubModel: GitHubModel
-  let weatherModel: WeatherModel
+  let networkModels: NetworkWidgetModels
 
   @EnvironmentObject var settings: SettingsManager
 
@@ -145,7 +165,7 @@ struct WidgetContainer: View {
       case .battery:
         BatteryWidget()
       case .weather:
-        WeatherWidget(model: weatherModel)
+        WeatherWidget(model: networkModels.weather)
       case .time:
         TimeWidget()
       case .date:
@@ -161,9 +181,9 @@ struct WidgetContainer: View {
       case .keyboard:
         KeyboardWidget()
       case .github:
-        GitHubWidget(model: githubModel)
+        GitHubWidget(model: networkModels.github)
       case .hackerNews:
-        HackerNewsWidget(position: position)
+        HackerNewsWidget(model: networkModels.hackerNews, position: position)
       case .cpu:
         CPUWidget()
       case .memory:
@@ -182,8 +202,8 @@ struct WidgetContainer: View {
         {
           let config = settings.settings.userWidgets[index]
           UserWidget(config: config, position: position)
-            // Replace only this widget when its command or activation changes, including captured callbacks.
-            .id([config.id.uuidString, config.command, String(config.isActive)])
+            // A new runner for each command, activation or interval; see `UserWidgetRunner`.
+            .id(UserWidgetRunner.Identity(config))
         } else {
           EmptyView()
         }

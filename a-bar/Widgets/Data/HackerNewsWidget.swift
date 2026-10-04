@@ -7,14 +7,23 @@ struct HackerNewsWidget: View {
     
     @EnvironmentObject var settings: SettingsManager
     
-    @StateObject private var model = HackerNewsModel()
-    private var stories: [HNStory] { model.stories ?? [] }
-    private var currentIndex: Int { model.currentIndex }
+    @ObservedObject private var model: HackerNewsModel
+    private var stories: [HNStory] { model.value ?? [] }
+    private var currentStory: HNStory? { HackerNewsRotation.current(currentStoryID, in: stories) }
+    @State private var currentStoryID: String?
+    // Not `Timer.publish` in `body`: that publisher is rebuilt on every re-render, restarting its
+    // countdown. Each rotation re-rendered the view, so the old 10-minute refresh never fired.
+    @State private var rotationTimer: Timer?
     @State private var isChevronHovered = false
     @State private var isChevronPressed = false
     @State private var isTitlePressed = false
     @StateObject private var popoverManager = WidgetPopoverManager(
         minWidth: 400, maxHeight: 520, alignment: .trailing)
+
+    init(model: HackerNewsModel, position: BarPosition) {
+        _model = ObservedObject(wrappedValue: model)
+        self.position = position
+    }
     
     private var hnSettings: HackerNewsWidgetSettings {
         settings.settings.widgets.hackerNews
@@ -35,7 +44,7 @@ struct HackerNewsWidget: View {
                 ProgressView()
                     .scaleEffect(0.5)
                     .frame(width: 16, height: 16)
-            } else if !stories.isEmpty {
+            } else if let story = currentStory {
                 HStack(spacing: 4) {
                     if hnSettings.showIcon {
                         Image(systemName: "newspaper.fill")
@@ -44,9 +53,9 @@ struct HackerNewsWidget: View {
                     }
                     
                     Button(action: {
-                        openStoryURL(stories[currentIndex])
+                        openStoryURL(story)
                     }) {
-                        Text((stories[currentIndex].title ?? "").truncated(to: hnSettings.maxTitleLength))
+                        Text((story.title ?? "").truncated(to: hnSettings.maxTitleLength))
                             .foregroundColor(theme.foreground)
                             .font(globalSettings.settingsFont())
                     }
@@ -56,10 +65,10 @@ struct HackerNewsWidget: View {
                     .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
                         isTitlePressed = pressing
                     }) {}
-                    .help(stories[currentIndex].title ?? "")
+                    .help(story.title ?? "")
                     
                     if hnSettings.showPoints {
-                        Text("(\(stories[currentIndex].points))")
+                        Text("(\(story.points))")
                             .font(globalSettings.settingsFont(scaledBy: 0.8))
                             .foregroundColor(theme.foreground.opacity(0.7))
                     }
@@ -121,22 +130,27 @@ struct HackerNewsWidget: View {
                 }
             )
         )
-        .onAppear {
-            refreshStories()
+        // The app owns the shared model's refresh schedule; this view only rotates.
+        .onAppear { startRotation() }
+        .onDisappear {
+            rotationTimer?.invalidate()
+            rotationTimer = nil
+            popoverManager.close()
         }
-        .onDisappear { model.stop(); popoverManager.close() }
+        .onChange(of: hnSettings.rotationInterval) { _ in startRotation() }
         .onChange(of: model.lastSuccess) { _ in popoverManager.refreshSize() }
-        .onReceive(Timer.publish(every: hnSettings.refreshInterval, on: .main, in: .common).autoconnect()) { _ in
-            refreshStories()
-        }
-        .onReceive(Timer.publish(every: hnSettings.rotationInterval, on: .main, in: .common).autoconnect()) { _ in
-            rotateStory()
-        }
     }
     
-    private func refreshStories() { model.refresh() }
+    private func refreshStories() { model.refresh(input: "") }
 
-    private func rotateStory() { model.rotate() }
+    private func startRotation() {
+        rotationTimer?.invalidate()
+        let timer = Timer(timeInterval: hnSettings.rotationInterval, repeats: true) { _ in
+            currentStoryID = HackerNewsRotation.next(after: currentStoryID, in: stories)?.objectID
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        rotationTimer = timer
+    }
 
     private func togglePopover() {
         if !popoverManager.isOpen {
@@ -161,7 +175,7 @@ struct HackerNewsWidget: View {
     private struct PopoverContent: View {
         @EnvironmentObject var settings: SettingsManager
         @EnvironmentObject var model: HackerNewsModel
-        private var stories: [HNStory] { model.stories ?? [] }
+        private var stories: [HNStory] { model.value ?? [] }
         let onOpenStory: (HNStory) -> Void
         let onOpenComments: (HNStory) -> Void
         
