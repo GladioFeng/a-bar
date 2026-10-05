@@ -309,6 +309,7 @@ final class UserWidgetRunner: ObservableObject {
   private var refreshTask: Task<Void, Never>?
   private var isRunning = false
   private var hasQueuedRefresh = false
+  private var lastSuccessfulStdout: String?
 
   init(config: UserWidgetDefinition) {
     command = config.command.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -384,29 +385,35 @@ final class UserWidgetRunner: ObservableObject {
     if !result.succeeded {
       // Build an informative error message from stderr and exit code
       let stderrTrimmed = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+      let message: String
       if let executionError = result.executionError {
-        errorMessage = executionError
+        message = executionError
       } else if result.exitCode == -1 {
         // Process launch failure — stderr already contains the description
-        errorMessage = stderrTrimmed.isEmpty
+        message = stderrTrimmed.isEmpty
           ? "Script could not be started."
           : stderrTrimmed
       } else {
         let codeNote = "Exit code: \(result.exitCode)"
-        errorMessage = stderrTrimmed.isEmpty ? codeNote : "\(codeNote)\n\(stderrTrimmed)"
+        message = stderrTrimmed.isEmpty ? codeNote : "\(codeNote)\n\(stderrTrimmed)"
       }
-      parsedOutput = .empty
-      currentHeaderIndex = 0
-      isLoading = false
+      if errorMessage != message { errorMessage = message }
+      lastSuccessfulStdout = nil
+      if parsedOutput != .empty { parsedOutput = .empty }
+      if currentHeaderIndex != 0 { currentHeaderIndex = 0 }
+      if isLoading { isLoading = false }
       return
     }
 
-    errorMessage = nil
-    let newOutput = XBarParser.parse(result.stdout)
-    if newOutput.headerLines.count != parsedOutput.headerLines.count {
-      currentHeaderIndex = 0
+    if errorMessage != nil { errorMessage = nil }
+    if result.stdout != lastSuccessfulStdout {
+      let newOutput = XBarParser.parse(result.stdout)
+      if newOutput.headerLines.count != parsedOutput.headerLines.count && currentHeaderIndex != 0 {
+        currentHeaderIndex = 0
+      }
+      if parsedOutput != newOutput { parsedOutput = newOutput }
+      lastSuccessfulStdout = result.stdout
     }
-    parsedOutput = newOutput
-    isLoading = false
+    if isLoading { isLoading = false }
   }
 }

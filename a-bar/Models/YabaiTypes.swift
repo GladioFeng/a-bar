@@ -44,6 +44,14 @@ struct YabaiSpace: Codable, Identifiable, Equatable {
         case bsp
         case stack
         case float
+
+        var systemImage: String {
+            switch self {
+            case .bsp: return "square.grid.2x2"
+            case .stack: return "rectangle.stack"
+            case .float: return "rectangle.on.rectangle"
+            }
+        }
     }
     
     /// Display label for the space
@@ -99,6 +107,14 @@ struct YabaiWindow: Codable, Identifiable, Equatable {
     var isSticky: Bool {
         return _isSticky ?? false
     }
+
+    // Match the SketchyBar window classifier; sticky remains an independent state.
+    var layoutType: YabaiSpace.SpaceType {
+        if isFloating { return .float }
+        return (stackIndex ?? 0) > 0 ? .stack : .bsp
+    }
+
+    var layoutLabel: String { layoutType.rawValue }
     
     var isTopmost: Bool {
         return _isTopmost ?? false

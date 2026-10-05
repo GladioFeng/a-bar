@@ -24,7 +24,7 @@ class YabaiService: ObservableObject {
     private enum RefreshScope { case windows, full }
     private var isStarted = false
     private var refreshGeneration = 0
-    private var isRefreshing = false
+    private var refreshTask: Task<Void, Never>?
     private var pendingRefresh: RefreshScope?
     private var hasFullSnapshot = false
 
@@ -49,13 +49,15 @@ class YabaiService: ObservableObject {
     }
 
     private func setupObservers() {
+        let generation = refreshGeneration
         // Observe macOS Space changes
         spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.refresh()
+            guard let self, self.isStarted, generation == self.refreshGeneration else { return }
+            self.refresh()
         }
 
         // Observe app activation/deactivation/launch/termination/hide/unhide
@@ -74,7 +76,8 @@ class YabaiService: ObservableObject {
                 object: nil,
                 queue: .main
             ) { [weak self] note in
-                self?.handleAppNotification(note)
+                guard let self, self.isStarted, generation == self.refreshGeneration else { return }
+                self.handleAppNotification(note)
             }
             appObservers.append(observer)
         }
@@ -85,7 +88,8 @@ class YabaiService: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.refresh()
+            guard let self, self.isStarted, generation == self.refreshGeneration else { return }
+            self.refresh()
         }
     }
 
@@ -97,17 +101,8 @@ class YabaiService: ObservableObject {
     /// Start the yabai service
     func start() {
         if isStarted {
-            if signalPath != yabaiPath {
-                refreshGeneration += 1
-                isRefreshing = false
-                pendingRefresh = nil
-                hasFullSnapshot = false
-                updateSignals(register: false, path: signalPath ?? yabaiPath)
-                signalPath = yabaiPath
-                setupYabaiSignals()
-                refresh()
-            }
-            return
+            guard signalPath != yabaiPath else { return }
+            stop()
         }
         for notification in [refreshNotification, titleRefreshNotification] {
             CFNotificationCenterAddObserver(
@@ -117,8 +112,9 @@ class YabaiService: ObservableObject {
                     guard let observer, let name else { return }
                     let service = Unmanaged<YabaiService>.fromOpaque(observer).takeUnretainedValue()
                     let notification = name.rawValue as String
+                    let generation = service.refreshGeneration
                     DispatchQueue.main.async { [weak service] in
-                        guard let service, service.isStarted else { return }
+                        guard let service, service.isStarted, generation == service.refreshGeneration else { return }
                         service.refresh(notification == service.titleRefreshNotification ? .windows : .full)
                     }
                 },
@@ -135,6 +131,7 @@ class YabaiService: ObservableObject {
 
     /// Stop the yabai service
     func stop() {
+        guard isStarted else { return }
         isStarted = false
         for notification in [refreshNotification, titleRefreshNotification] {
             CFNotificationCenterRemoveObserver(
@@ -143,7 +140,9 @@ class YabaiService: ObservableObject {
                 CFNotificationName(notification as CFString), nil)
         }
         refreshGeneration += 1
-        isRefreshing = false
+        refreshTask?.cancel()
+        refreshTask = nil
+        signalTask?.cancel()
         pendingRefresh = nil
         hasFullSnapshot = false
         if let observer = spaceObserver {
@@ -176,8 +175,10 @@ class YabaiService: ObservableObject {
         stopSignalTimer()
         
         // Create a new timer that fires every 20 seconds
+        let generation = refreshGeneration
         signalTimer = Timer.scheduledTimer(withTimeInterval: 20.0, repeats: true) { [weak self] _ in
-            self?.setupYabaiSignals()
+            guard let self, self.isStarted, generation == self.refreshGeneration else { return }
+            self.setupYabaiSignals()
         }
     }
     
@@ -194,6 +195,7 @@ class YabaiService: ObservableObject {
     }
 
     private func setupYabaiSignals() {
+        guard isStarted else { return }
         updateSignals(register: true, path: yabaiPath)
     }
 
@@ -208,21 +210,22 @@ class YabaiService: ObservableObject {
                 }
                 return
             }
-            guard isStarted, generation == refreshGeneration else { return }
+            guard isStarted, generation == refreshGeneration, !Task.isCancelled else { return }
             do {
                 let output = try await ShellExecutor.run(executable: path, arguments: ["-m", "signal", "--list"])
                 let signals = try JSONDecoder().decode([YabaiSignal].self, from: Data(output.utf8))
                 for (event, label) in Self.signalEvents {
+                    guard isStarted, generation == refreshGeneration, !Task.isCancelled else { return }
                     // Keep the labels while migrating old AppleScript and full-refresh title actions.
                     let action = signalAction(for: event)
                     if signals.contains(where: { $0.label == label && $0.event == event && $0.action == action }) { continue }
                     try await ShellExecutor.run(executable: path, arguments: [
                         "-m", "signal", "--add", "event=\(event)", "action=\(action)", "label=\(label)"])
                 }
-                guard isStarted, generation == refreshGeneration else { return }
+                guard isStarted, generation == refreshGeneration, !Task.isCancelled else { return }
                 if !signalsRegistered { signalsRegistered = true }
             } catch {
-                guard isStarted, generation == refreshGeneration else { return }
+                guard isStarted, generation == refreshGeneration, !Task.isCancelled else { return }
                 if signalsRegistered { signalsRegistered = false }
                 print("Failed to register yabai signals: \(error). Retrying in 20 seconds.")
             }
@@ -235,19 +238,18 @@ class YabaiService: ObservableObject {
     }
 
     /// Keep one pending request, with complete snapshots taking precedence over title updates.
-    @MainActor
     private func enqueueRefresh(_ scope: RefreshScope) {
         if scope == .full || pendingRefresh == nil { pendingRefresh = scope }
     }
 
     private func refresh(_ requestedScope: RefreshScope) {
+        guard isStarted else { return }
+        enqueueRefresh(requestedScope)
+        guard refreshTask == nil else { return }
         let generation = refreshGeneration
-        Task { @MainActor in
-            guard generation == refreshGeneration else { return }
-            enqueueRefresh(requestedScope)
-            guard !isRefreshing else { return }
-            isRefreshing = true
+        refreshTask = Task { @MainActor in
             while let requested = pendingRefresh {
+                guard isStarted, generation == refreshGeneration, !Task.isCancelled else { return }
                 pendingRefresh = nil
                 let scope: RefreshScope = hasFullSnapshot ? requested : .full
                 let path = yabaiPath
@@ -262,7 +264,7 @@ class YabaiService: ObservableObject {
                         next.windows = filteredWindows(next.windows)
                     case .windows:
                         let windows = filteredWindows(try await fetch("windows", path: path))
-                        guard generation == refreshGeneration else { return }
+                        guard isStarted, generation == refreshGeneration, !Task.isCancelled else { return }
                         // A title event may race a structural change. Do not combine those windows
                         // with cached Space/display membership; wait for the complete follow-up.
                         guard pendingRefresh != .full, canApplyTitleUpdate(windows) else {
@@ -273,21 +275,21 @@ class YabaiService: ObservableObject {
                         next.windows = windows
                     }
                     // A stopped service must not overwrite a newer generation's state or flags.
-                    guard generation == refreshGeneration else { return }
+                    guard isStarted, generation == refreshGeneration, !Task.isCancelled else { return }
                     if scope == .full { hasFullSnapshot = true }
                     if state != next { state = next }
                     if !isConnected { isConnected = true }
                     if lastError != nil { lastError = nil }
                 } catch {
-                    guard generation == refreshGeneration else { return }
+                    guard isStarted, generation == refreshGeneration, !Task.isCancelled else { return }
                     hasFullSnapshot = false
-                    handleError(error)
+                    handleError(error, generation: generation)
                     // Retry a failed partial read once as a full snapshot. A failed full read
                     // waits for another event instead of creating an unbounded retry loop.
                     if scope == .windows { enqueueRefresh(.full) }
                 }
             }
-            isRefreshing = false
+            refreshTask = nil
         }
     }
 
@@ -318,7 +320,9 @@ class YabaiService: ObservableObject {
 
     /// Process I/O and decoding stay off the main actor.
     private func fetch<T: Decodable>(_ collection: String, path: String) async throws -> T {
+        try Task.checkCancellation()
         let output = try await ShellExecutor.run(executable: path, arguments: ["-m", "query", "--\(collection)"])
+        try Task.checkCancellation()
         let decoder = JSONDecoder()
         // Valid output needs no repair and must retain its literal string values.
         if let value = try? decoder.decode(T.self, from: Data(output.utf8)) { return value }
@@ -328,58 +332,64 @@ class YabaiService: ObservableObject {
 
     /// Focus on a specific space
     func goToSpace(_ index: Int) async {
+        let generation = refreshGeneration
         do {
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", "--focus", String(index)])
         } catch {
-            await handleError(error)
+            await handleError(error, generation: generation)
         }
     }
 
     /// Rename a space
     func renameSpace(_ index: Int, label: String) async {
+        let generation = refreshGeneration
         do {
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", String(index), "--label", label])
         } catch {
-            await handleError(error)
+            await handleError(error, generation: generation)
         }
     }
 
     /// Create a new space on a display
     func createSpace(onDisplay displayIndex: Int) async {
+        let generation = refreshGeneration
         do {
             try await focusDisplay(displayIndex)
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", "--create"])
         } catch {
-            await handleError(error)
+            await handleError(error, generation: generation)
         }
     }
 
     /// Remove a space
     func removeSpace(_ index: Int, onDisplay displayIndex: Int) async {
+        let generation = refreshGeneration
         do {
             try await focusDisplay(displayIndex)
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", String(index), "--destroy"])
         } catch {
-            await handleError(error)
+            await handleError(error, generation: generation)
         }
     }
 
     /// Swap a space with another in the given direction
     func swapSpace(_ index: Int, direction: SwapDirection) async {
+        let generation = refreshGeneration
         let targetIndex = direction == .left ? index - 1 : index + 1
         do {
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", String(index), "--swap", String(targetIndex)])
         } catch {
-            await handleError(error)
+            await handleError(error, generation: generation)
         }
     }
 
     /// Focus on a specific window
     func focusWindow(_ id: Int) async {
+        let generation = refreshGeneration
         do {
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "window", "--focus", String(id)])
         } catch {
-            await handleError(error)
+            await handleError(error, generation: generation)
         }
     }
 
@@ -391,7 +401,8 @@ class YabaiService: ObservableObject {
     // Timer logic removed
 
     @MainActor
-    private func handleError(_ error: Error) {
+    private func handleError(_ error: Error, generation: Int) {
+        guard generation == refreshGeneration else { return }
         self.lastError = error
         self.isConnected = false
         print("Yabai error: \(error)")

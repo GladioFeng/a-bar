@@ -13,11 +13,12 @@ final class YabaiStateTests: XCTestCase {
 
   private func space(
     id: Int, index: Int, display: Int = 1, label: String? = nil,
-    focused: Bool? = nil, visible: Bool? = nil, windows: [Int] = []
+    focused: Bool? = nil, visible: Bool? = nil, windows: [Int] = [],
+    type: YabaiSpace.SpaceType = .bsp
   ) -> YabaiSpace {
     var fields: [String] = [
       "\"id\":\(id)", "\"index\":\(index)", "\"display\":\(display)",
-      "\"type\":\"bsp\"", "\"windows\":\(windows)",
+      "\"type\":\"\(type.rawValue)\"", "\"windows\":\(windows)",
     ]
     if let label { fields.append("\"label\":\"\(label)\"") }
     if let focused { fields.append("\"has-focus\":\(focused)") }
@@ -28,7 +29,7 @@ final class YabaiStateTests: XCTestCase {
   private func window(
     id: Int, app: String, title: String = "", space: Int = 1, display: Int = 1,
     x: Double = 0, focused: Bool? = nil, minimized: Bool? = nil,
-    hidden: Bool? = nil, sticky: Bool? = nil, stackIndex: Int? = nil
+    hidden: Bool? = nil, sticky: Bool? = nil, floating: Bool? = nil, stackIndex: Int? = nil
   ) -> YabaiWindow {
     var fields: [String] = [
       "\"id\":\(id)", "\"pid\":\(1000 + id)", "\"app\":\"\(app)\"", "\"title\":\"\(title)\"",
@@ -39,6 +40,7 @@ final class YabaiStateTests: XCTestCase {
     if let minimized { fields.append("\"is-minimized\":\(minimized)") }
     if let hidden { fields.append("\"is-hidden\":\(hidden)") }
     if let sticky { fields.append("\"is-sticky\":\(sticky)") }
+    if let floating { fields.append("\"is-floating\":\(floating)") }
     if let stackIndex { fields.append("\"stack-index\":\(stackIndex)") }
     return decode(YabaiWindow.self, "{\(fields.joined(separator: ","))}")
   }
@@ -79,6 +81,47 @@ final class YabaiStateTests: XCTestCase {
     XCTAssertTrue(focused.hasFocus)
     XCTAssertTrue(focused.isVisible)
     XCTAssertFalse(space(id: 2, index: 2).hasFocus)
+  }
+
+  func testFocusedWindowModeUsesWindowFlagsInsteadOfSpaceLayout() {
+    let cases: [(Bool?, Int?, String)] = [
+      (true, nil, "float"), (true, 2, "float"),
+      (false, 2, "stack"), (false, 0, "bsp"), (nil, nil, "bsp"),
+    ]
+    for (floating, stackIndex, expected) in cases {
+      let snapshot = YabaiState(
+        spaces: [space(id: 1, index: 1, focused: true)],
+        windows: [window(id: 10, app: "Fixture", focused: true,
+                         floating: floating, stackIndex: stackIndex)])
+      XCTAssertEqual(snapshot.focusedSpace?.type, .bsp)
+      XCTAssertEqual(snapshot.focusedWindow?.layoutLabel, expected)
+    }
+  }
+
+  func testStickyDoesNotReplaceTheFocusedWindowMode() {
+    let snapshot = YabaiState(
+      spaces: [space(id: 1, index: 1, focused: true)],
+      windows: [window(id: 10, app: "Fixture", space: 2, focused: true,
+                       sticky: true, floating: true)])
+    XCTAssertEqual(snapshot.focusedWindow?.layoutLabel, "float")
+    XCTAssertEqual(snapshot.focusedWindow?.isSticky, true)
+    XCTAssertNotEqual(snapshot.focusedWindow?.space, snapshot.focusedSpace?.index)
+    XCTAssertNil(YabaiState().focusedWindow)
+  }
+
+  func testSpaceAndWindowLayoutsStayIndependentForEverySpaceType() {
+    let types: [YabaiSpace.SpaceType] = [.bsp, .stack, .float]
+    for type in types {
+      let snapshot = YabaiState(
+        spaces: [space(id: 1, index: 1, focused: true, type: type)],
+        windows: [window(id: 10, app: "Fixture", focused: true, floating: true, stackIndex: 2)])
+      XCTAssertEqual(snapshot.focusedSpace?.type, type)
+      XCTAssertEqual(snapshot.focusedWindow?.layoutType, .float)
+      XCTAssertEqual(snapshot.focusedWindow?.layoutType.systemImage, "rectangle.on.rectangle")
+    }
+    XCTAssertEqual(YabaiSpace.SpaceType.bsp.systemImage, "square.grid.2x2")
+    XCTAssertEqual(YabaiSpace.SpaceType.stack.systemImage, "rectangle.stack")
+    XCTAssertNil(YabaiState(windows: [window(id: 10, app: "Fixture", focused: true)]).focusedSpace)
   }
 
   // MARK: - A space shows its label, or its number

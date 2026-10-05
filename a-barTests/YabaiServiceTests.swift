@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import SwiftUI
 import XCTest
 import Darwin
 
@@ -18,6 +19,8 @@ final class YabaiServiceTests: XCTestCase {
     private var manager: SettingsManager!
     private var notificationName: String!
     private var observations = Set<AnyCancellable>()
+    private var activeServiceDirectory: URL?
+    private var expectedRemovals: [URL: Int] = [:]
 
     override func setUpWithError() throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("abar-refresh-\(UUID())")
@@ -29,8 +32,10 @@ final class YabaiServiceTests: XCTestCase {
         # each query at the test's gate file, then prints the fixture for the collection asked
         # for. Reads the JSON fixtures beside it; writes the call log next to them.
         root=${0%/*}
+        trap 'printf "%s\\n" "$*" >> "$root/completed"' EXIT
         printf '%s\\n' "$2 $3" >> "$root/calls"
         printf '%s\\n' "$*" >> "$root/arguments"
+        printf '%s\\n' "$*" >> "$root/started"
         if [ "$2" = query ]; then
           while [ -f "$root/hold" ]; do sleep 0.01; done
           sleep 0.02
@@ -57,11 +62,56 @@ final class YabaiServiceTests: XCTestCase {
 
     override func tearDownWithError() throws {
         observations.removeAll()
+        stopService()
+        // Release blocked reads before waiting; stopped generations must finish without publishing.
+        for root in fixtureDirectories {
+            try? FileManager.default.removeItem(at: root.appendingPathComponent("hold"))
+        }
+        let cleaned = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                self.signalCleanupComplete && self.fixtureDirectories.allSatisfy { root in
+                    self.log("started", at: root).count == self.log("completed", at: root).count
+                }
+            }, object: nil)
+        wait(for: [cleaned], timeout: 3)
         manager.flush()
-        try? FileManager.default.removeItem(at: directory.appendingPathComponent("hold"))
-        // Tests that start observers explicitly stop them and await signal removal first.
         service = nil
         try FileManager.default.removeItem(at: directory)
+        activeServiceDirectory = nil
+        expectedRemovals.removeAll()
+    }
+
+    private var fixtureDirectories: Set<URL> {
+        Set(expectedRemovals.keys).union([directory.standardizedFileURL])
+    }
+
+    private func log(_ name: String, at root: URL) -> [String] {
+        ((try? String(contentsOf: root.appendingPathComponent(name), encoding: .utf8)) ?? "")
+            .split(separator: "\n").map(String.init)
+    }
+
+    private var signalCleanupComplete: Bool {
+        expectedRemovals.allSatisfy { root, count in
+            log("completed", at: root).filter { $0.hasPrefix("-m signal --remove ") }.count >= count
+        }
+    }
+
+    private func startService() {
+        let root = URL(fileURLWithPath: manager.settings.global.yabaiPath)
+            .deletingLastPathComponent().standardizedFileURL
+        if let previous = activeServiceDirectory, previous != root {
+            expectedRemovals[previous, default: 0] += 3
+        }
+        activeServiceDirectory = root
+        service.start()
+    }
+
+    private func stopService() {
+        if let root = activeServiceDirectory {
+            expectedRemovals[root, default: 0] += 3
+            activeServiceDirectory = nil
+        }
+        service.stop()
     }
 
     private func write(_ name: String, _ value: String) throws {
@@ -98,7 +148,7 @@ final class YabaiServiceTests: XCTestCase {
 
     @MainActor
     private func startAndClearCalls() async throws {
-        service.start()
+        startService()
         await waitFor { service.isConnected && service.signalsRegistered }
         try write("calls", "")
         try write("arguments", "")
@@ -106,8 +156,8 @@ final class YabaiServiceTests: XCTestCase {
 
     @MainActor
     private func stopAndWait() async {
-        service.stop()
-        await waitFor { calls.filter { $0 == "signal --remove" }.count == 3 }
+        stopService()
+        await waitFor { signalCleanupComplete }
     }
 
     @MainActor
@@ -118,11 +168,99 @@ final class YabaiServiceTests: XCTestCase {
     }
 
     @MainActor
+    func testProcessLabelsFollowEventsAndKeepFocusedStickyWindowsAcrossSpaces() async throws {
+        _ = NSApplication.shared
+        manager.update {
+            $0.widgets.process.displayOnlyIcon = true
+            $0.widgets.process.showLayoutMode = true
+            $0.widgets.process.layoutModeUsesIcon = false
+            $0.widgets.process.spaceLayoutDisplay = .text
+        }
+        var fixture = try readFixture("--windows.json")
+        fixture[0]["space"] = 2
+        fixture[0]["is-floating"] = true
+        fixture[0]["is-sticky"] = true
+        try writeFixture("--windows.json", fixture)
+        try await startAndClearCalls()
+        let host = NSHostingView(rootView: ProcessWidget()
+            .environmentObject(manager).environmentObject(service)
+            .fixedSize(horizontal: true, vertical: false).frame(height: 30))
+        let window = NSWindow(
+            contentRect: NSRect(x: -10000, y: -10000, width: 400, height: 30),
+            styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.contentView = nil; window.close() }
+        func renderedWidth() -> CGFloat {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+            host.layoutSubtreeIfNeeded()
+            return host.fittingSize.width
+        }
+        let bothLabels = renderedWidth()
+        XCTAssertGreaterThan(bothLabels, 80,
+            "a focused sticky window on another Space must show its icon and both labels")
+        XCTAssertTrue(queries.isEmpty, "rendering labels must not start extra yabai queries")
+        manager.update { $0.widgets.process.layoutModeUsesIcon = true }
+        let layoutIcon = renderedWidth()
+        XCTAssertLessThan(layoutIcon, bothLabels - 5, "the focused float label switches from text to an icon")
+        manager.update { $0.widgets.process.layoutModeUsesIcon = false }
+        XCTAssertEqual(renderedWidth(), bothLabels, accuracy: 0.5)
+
+        manager.update { $0.widgets.process.showLayoutMode = false }
+        let stickyOnly = renderedWidth()
+        XCTAssertLessThan(stickyOnly, bothLabels - 10)
+        XCTAssertGreaterThan(stickyOnly, 45, "sticky remains visible in icon-only mode")
+        XCTAssertEqual(service.state.focusedSpace?.type, .bsp)
+        XCTAssertEqual(service.state.focusedWindow?.layoutLabel, "float")
+        manager.update { $0.widgets.process.spaceLayoutDisplay = .off }
+        let noSpaceBadge = renderedWidth()
+        XCTAssertGreaterThan(noSpaceBadge, 45, "sticky remains visible with the independent Space badge off")
+        XCTAssertLessThan(noSpaceBadge, stickyOnly - 10, "the independent Space badge can be hidden")
+        manager.update { $0.widgets.process.spaceLayoutDisplay = .icon }
+        let spaceIcon = renderedWidth()
+        XCTAssertGreaterThan(spaceIcon, noSpaceBadge + 5, "the Space icon remains when the focused layout badge is off")
+        XCTAssertLessThan(spaceIcon, stickyOnly - 5, "Space text and icon are separate display modes")
+        manager.update { $0.widgets.process.spaceLayoutDisplay = .text }
+        XCTAssertEqual(renderedWidth(), stickyOnly, accuracy: 0.5)
+        XCTAssertTrue(queries.isEmpty, "badge settings must not introduce data reads")
+
+        // Change the fixture without an event: the view must keep the published snapshot.
+        fixture[0]["is-sticky"] = false
+        try writeFixture("--windows.json", fixture)
+        XCTAssertEqual(renderedWidth(), stickyOnly, accuracy: 0.5)
+        XCTAssertTrue(queries.isEmpty, "no polling is introduced by the labels")
+        try await postRefresh(titleOnly: false)
+        await waitFor { service.state.focusedWindow?.isSticky == false }
+        XCTAssertLessThan(renderedWidth(), stickyOnly - 10)
+
+        // A subsequent focus/state event publishes the new mode through the same service.
+        fixture[0]["space"] = 1
+        fixture[0]["is-floating"] = false
+        fixture[0]["stack-index"] = 2
+        try writeFixture("--windows.json", fixture)
+        manager.update { $0.widgets.process.showLayoutMode = true }
+        try await postRefresh(titleOnly: false)
+        await waitFor { service.state.focusedWindow?.layoutLabel == "stack" }
+        XCTAssertGreaterThan(renderedWidth(), 65)
+        await stopAndWait()
+    }
+
+    @MainActor
+    func testManualRefreshBeforeStartDoesNotReadOrRegisterSignals() async throws {
+        service.refresh()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertTrue(calls.isEmpty)
+        XCTAssertEqual(service.state, YabaiState())
+        XCTAssertFalse(service.isConnected)
+        XCTAssertFalse(service.signalsRegistered)
+    }
+
+    @MainActor
     func testQueriesRunConcurrentlyAndBurstPublishesOneCompleteSnapshot() async throws {
         try write("hold", "")
         var states: [YabaiState] = []
         service.$state.dropFirst().sink { states.append($0) }.store(in: &observations)
-        service.refresh()
+        startService()
         await waitFor { queries.count == 3 }
         // All three processes reached the gate before any one was allowed to finish.
         XCTAssertTrue(states.isEmpty)
@@ -140,7 +278,7 @@ final class YabaiServiceTests: XCTestCase {
 
     @MainActor
     func testFailureKeepsCompleteStateAndEqualSuccessRestoresConnection() async throws {
-        service.refresh()
+        startService()
         await waitFor { service.isConnected }
         let original = service.state
         let windows = try String(contentsOf: directory.appendingPathComponent("--windows.json"), encoding: .utf8)
@@ -163,7 +301,7 @@ final class YabaiServiceTests: XCTestCase {
         windows[0]["title"] = title
         let output = try JSONSerialization.data(withJSONObject: windows)
         try write("--windows.json", String(decoding: output, as: UTF8.self))
-        service.refresh()
+        startService()
         await waitFor { service.isConnected }
         XCTAssertEqual(service.state.windows.first?.title, title)
     }
@@ -172,7 +310,7 @@ final class YabaiServiceTests: XCTestCase {
     func testMalformedLegacyArraysStillUseTheSanitizer() async throws {
         let output = try String(contentsOf: directory.appendingPathComponent("--windows.json"), encoding: .utf8)
         try write("--windows.json", "[," + output.dropFirst().dropLast() + ",]")
-        service.refresh()
+        startService()
         await waitFor { service.isConnected }
         XCTAssertEqual(service.state.windows.count, 1)
         XCTAssertEqual(service.state.windows.first?.title, "Example")
@@ -181,22 +319,26 @@ final class YabaiServiceTests: XCTestCase {
     @MainActor
     func testStoppedGenerationCannotPublishItsResult() async throws {
         try write("hold", "")
-        service.refresh()
+        startService()
         await waitFor { queries.count == 3 }
-        service.stop()
+        stopService()
         try FileManager.default.removeItem(at: directory.appendingPathComponent("hold"))
         try await Task.sleep(nanoseconds: 150_000_000)
         XCTAssertEqual(service.state, YabaiState())
         XCTAssertFalse(service.isConnected)
+        let stoppedQueryCount = queries.count
         service.refresh()
-        await waitFor { service.isConnected }
-        await waitFor { calls.filter { $0 == "signal --remove" }.count == 3 }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(queries.count, stoppedQueryCount, "manual refresh cannot reactivate a stopped service")
+        startService()
+        await waitFor { service.isConnected && service.signalsRegistered }
+        await waitFor { signalCleanupComplete }
     }
 
     @MainActor
     func testRepeatedStartDoesNotDuplicateSpaceObserver() async throws {
-        service.start()
-        service.start()
+        startService()
+        startService()
         await waitFor { service.isConnected && service.signalsRegistered }
         XCTAssertEqual(queries.count, 3)
         try write("calls", "")
@@ -204,16 +346,16 @@ final class YabaiServiceTests: XCTestCase {
         await waitFor { queries.count >= 3 }
         try await Task.sleep(nanoseconds: 150_000_000)
         XCTAssertEqual(queries.count, 3)
-        service.stop()
-        await waitFor { calls.filter { $0 == "signal --remove" }.count == 3 }
+        stopService()
+        await waitFor { signalCleanupComplete }
     }
 
     @MainActor
     func testNativeNotificationRefreshesAndQuickRestartKeepsSignals() async throws {
-        service.start()
+        startService()
         await waitFor { service.isConnected && service.signalsRegistered }
-        service.stop()
-        service.start()
+        stopService()
+        startService()
         await waitFor { service.signalsRegistered }
         let lastRemove = calls.lastIndex(of: "signal --remove")
         let lastAdd = calls.lastIndex(of: "signal --add")
@@ -226,13 +368,13 @@ final class YabaiServiceTests: XCTestCase {
         await waitFor { queries.count >= 3 }
         try await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertEqual(queries.count, 3)
-        service.stop()
-        await waitFor { calls.filter { $0 == "signal --remove" }.count == 3 }
+        stopService()
+        await waitFor { signalCleanupComplete }
     }
 
     @MainActor
     func testNewYabaiPathDoesNotWaitForOrPublishOldInFlightQuery() async throws {
-        service.start()
+        startService()
         await waitFor { service.isConnected && service.signalsRegistered }
         let other = directory.appendingPathComponent("new")
         try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
@@ -247,16 +389,13 @@ final class YabaiServiceTests: XCTestCase {
         service.refresh()
         await waitFor { queries.count == 3 }
         manager.update { $0.global.yabaiPath = other.appendingPathComponent("yabai").path }
-        service.start()
+        startService()
         await waitFor { service.state.focusedWindow?.title == "New source" }
         try FileManager.default.removeItem(at: directory.appendingPathComponent("hold"))
         try await Task.sleep(nanoseconds: 150_000_000)
         XCTAssertEqual(service.state.focusedWindow?.title, "New source")
-        service.stop()
-        await waitFor {
-            let log = (try? String(contentsOf: other.appendingPathComponent("calls"), encoding: .utf8)) ?? ""
-            return log.components(separatedBy: "signal --remove").count == 4
-        }
+        stopService()
+        await waitFor { signalCleanupComplete }
     }
 
     @MainActor
@@ -418,7 +557,7 @@ final class YabaiServiceTests: XCTestCase {
     func testTitleBeforeFirstSuccessfulSnapshotUsesFull() async throws {
         let spaces = try String(contentsOf: directory.appendingPathComponent("--spaces.json"), encoding: .utf8)
         try write("--spaces.json", "invalid JSON")
-        service.start()
+        startService()
         await waitFor { service.lastError != nil && service.signalsRegistered }
         XCTAssertEqual(service.state, YabaiState())
         try write("--spaces.json", spaces)
@@ -440,7 +579,7 @@ final class YabaiServiceTests: XCTestCase {
             ["index": 1, "label": "abar-window-title-changed", "event": "window_title_changed", "app": "", "title": "", "action": fullAction],
             ["index": 2, "label": "abar-window-focused", "event": "window_created", "app": "", "title": "", "action": fullAction]
         ])
-        service.start()
+        startService()
         await waitFor { service.isConnected && service.signalsRegistered }
         let adds = arguments.filter { $0.hasPrefix("-m signal --add ") }
         XCTAssertEqual(adds.count, 2, "the already correct destroyed signal should not be registered again")
@@ -457,7 +596,7 @@ final class YabaiServiceTests: XCTestCase {
             ["index": 1, "label": "abar-window-title-changed", "event": "window_title_changed", "app": "", "title": "", "action": fullAction + ".window-title-changed"],
             ["index": 2, "label": "abar-window-focused", "event": "window_focused", "app": "", "title": "", "action": fullAction]
         ])
-        service.start()
+        startService()
         await waitFor { service.isConnected && service.signalsRegistered }
         XCTAssertFalse(calls.contains("signal --add"))
         await stopAndWait()
@@ -477,6 +616,7 @@ final class YabaiServiceTests: XCTestCase {
         try await Task.sleep(nanoseconds: 100_000_000)
         await stopAndWait()
         try write("calls", "")
+        service.refresh()
         try await postRefresh(titleOnly: true)
         try await postRefresh(titleOnly: false)
         try await Task.sleep(nanoseconds: 150_000_000)

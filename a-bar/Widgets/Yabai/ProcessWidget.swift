@@ -27,7 +27,9 @@ struct ProcessWidget: View {
         let windowsOnCurrentSpace: [YabaiWindow] = {
             if processSettings.showCurrentSpaceOnly {
                 guard let focusedSpace = state.focusedSpace else { return [] }
-                return state.windows.filter { $0.space == focusedSpace.index }
+                return state.windows.filter {
+                    $0.space == focusedSpace.index || ($0.isSticky && $0.id == focusedWin?.id)
+                }
             }
             return state.windows
         }()
@@ -37,44 +39,12 @@ struct ProcessWidget: View {
             windowsOnCurrentSpace, stackIndex: \.stackIndex, x: \.frame.x
         )
 
-        // Determine current space and layout mode for this view
-        let currentSpace: YabaiSpace? = {
-            if processSettings.showCurrentSpaceOnly {
-                return state.focusedSpace
-            }
-            if let firstSpaceIndex = windowsOnCurrentSpace.first?.space {
-                return state.spaces.first { $0.index == firstSpaceIndex }
-            }
-            return nil
-        }()
-
-        let layoutMode = currentSpace?.type.rawValue
-
       HStack(spacing: globalSettings.barElementGap) {
-        if let layoutMode = layoutMode, processSettings.showLayoutMode {
-          HStack {
-            Text(layoutMode)
-              .font(userFont.weight(.medium))
-              .foregroundColor(theme.foreground.opacity(0.9))
-          }
-          .frame(maxHeight: .infinity)
-          .padding(.horizontal, 6)
-          .padding(.vertical, 3)
-          .background(
-            RoundedRectangle(cornerRadius: globalSettings.barElementsCornerRadius)
-              .fill(theme.mainAlt.opacity((globalSettings.barElementsBackgroundOpacity / 100) * 0.5))
-          )
-          .overlay(
-            Group {
-              if (globalSettings.showElementsBorder) {
-                
-                RoundedRectangle(
-                  cornerRadius: globalSettings.barElementsCornerRadius
-                )
-                .stroke(theme.foreground.opacity(0.1), lineWidth: 1)
-              }
-            }
-          )
+        if processSettings.spaceLayoutDisplay != .off, let space = state.focusedSpace {
+          stateBadge("Space \(space.type.rawValue)", font: userFontSmall,
+                     systemImage: processSettings.spaceLayoutDisplay == .icon ? space.type.systemImage : nil)
+            .help("Current space layout: \(space.type.rawValue)")
+            .accessibilityLabel("Current space layout: \(space.type.rawValue)")
         }
         if orderedWindows.isEmpty {
             // No windows: show desktop
@@ -93,7 +63,7 @@ struct ProcessWidget: View {
         } else {
           ForEach(orderedWindows, id: \.id) { window in
             if window.id == focusedWin?.id {
-                // Focused window: show icon, app name, title, and optional stack index badge on the right
+                // Focused window state comes from the shared, event-driven yabai snapshot.
               HStack(spacing: globalSettings.barElementGap) {
                 AppIconView(appName: window.app, size: 16)
                 if !processSettings.displayOnlyIcon {
@@ -108,16 +78,19 @@ struct ProcessWidget: View {
                     }
                   }
                 }
+                if processSettings.showLayoutMode {
+                  stateBadge(window.layoutLabel, font: userFontSmall,
+                             systemImage: processSettings.layoutModeUsesIcon ? window.layoutType.systemImage : nil)
+                    .help("Focused window layout: \(window.layoutLabel)")
+                    .accessibilityLabel("Focused window layout: \(window.layoutLabel)")
+                }
+                if window.isSticky {
+                  stateBadge("sticky", font: userFontSmall)
+                    .help("Focused window is visible on all spaces")
+                    .accessibilityLabel("Focused window is sticky: visible on all spaces")
+                }
                 if let idx = window.stackIndex, idx != 0 {
-                  Text("\(idx)")
-                    .font(userFontSmall.weight(.medium))
-                    .foregroundColor(theme.foreground.opacity(0.9))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                      RoundedRectangle(cornerRadius: globalSettings.barElementsCornerRadius)
-                        .fill(theme.minor.opacity((globalSettings.barElementsBackgroundOpacity / 100) * 0.5))
-                    )
+                  stateBadge("\(idx)", font: userFontSmall)
                 }
               }
               .padding(.horizontal, 4)
@@ -195,6 +168,25 @@ struct ProcessWidget: View {
         }
       }
     }
+    private func stateBadge(_ label: String, font: Font, systemImage: String? = nil) -> some View {
+      let global = settings.settings.global
+      return Group {
+        if let systemImage {
+          Image(systemName: systemImage)
+        } else {
+          Text(label)
+        }
+      }
+        .font(font.weight(.medium))
+        .foregroundColor(theme.foreground.opacity(0.9))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(
+          RoundedRectangle(cornerRadius: global.barElementsCornerRadius)
+            .fill(theme.minor.opacity((global.barElementsBackgroundOpacity / 100) * 0.5))
+        )
+    }
+
     private func focusWindow(_ window: YabaiWindow) {
         Task {
             await yabaiService.focusWindow(window.id)
