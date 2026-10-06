@@ -42,6 +42,12 @@ final class YabaiServiceTests: XCTestCase {
           cat "$root/$3.json"
         elif [ "$3" = --list ]; then
           if [ -f "$root/signals.json" ]; then cat "$root/signals.json"; else printf '[]\\n'; fi
+        elif [ "$2" != signal ]; then
+          while [ -f "$root/hold-mutation" ]; do sleep 0.01; done
+          if [ -f "$root/fail-command" ] && [ "$(cat "$root/fail-command")" = "$2" ]; then
+            printf 'fixture mutation failed\\n' >&2
+            exit 1
+          fi
         fi
         """.write(to: executable, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
@@ -66,6 +72,7 @@ final class YabaiServiceTests: XCTestCase {
         // Release blocked reads before waiting; stopped generations must finish without publishing.
         for root in fixtureDirectories {
             try? FileManager.default.removeItem(at: root.appendingPathComponent("hold"))
+            try? FileManager.default.removeItem(at: root.appendingPathComponent("hold-mutation"))
         }
         let cleaned = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
@@ -100,7 +107,7 @@ final class YabaiServiceTests: XCTestCase {
         let root = URL(fileURLWithPath: manager.settings.global.yabaiPath)
             .deletingLastPathComponent().standardizedFileURL
         if let previous = activeServiceDirectory, previous != root {
-            expectedRemovals[previous, default: 0] += 3
+            expectedRemovals[previous, default: 0] += 4
         }
         activeServiceDirectory = root
         service.start()
@@ -108,7 +115,7 @@ final class YabaiServiceTests: XCTestCase {
 
     private func stopService() {
         if let root = activeServiceDirectory {
-            expectedRemovals[root, default: 0] += 3
+            expectedRemovals[root, default: 0] += 4
             activeServiceDirectory = nil
         }
         service.stop()
@@ -158,6 +165,66 @@ final class YabaiServiceTests: XCTestCase {
     private func stopAndWait() async {
         stopService()
         await waitFor { signalCleanupComplete }
+    }
+
+    @MainActor
+    func testSuccessfulMutationsPublishFreshSnapshotWithoutExternalEvents() async throws {
+        try await startAndClearCalls()
+        let mutations: [() async -> Void] = [
+            { await self.service.goToSpace(1) },
+            { await self.service.renameSpace(1, label: "Renamed") },
+            { await self.service.createSpace(onDisplay: 1) },
+            { await self.service.removeSpace(1, onDisplay: 1) },
+            { await self.service.swapSpace(1, direction: .right) },
+            { await self.service.focusWindow(10) },
+        ]
+        for (index, mutate) in mutations.enumerated() {
+            let label = "Result \(index)"
+            var spaces = try readFixture("--spaces.json")
+            spaces[0]["label"] = label
+            try writeFixture("--spaces.json", spaces)
+            await mutate()
+            await waitFor { service.state.spaces.first?.label == label }
+        }
+    }
+
+    @MainActor
+    func testFailedMutationsKeepSnapshotAndDoNotRefresh() async throws {
+        try await startAndClearCalls()
+        let original = service.state
+        try write("fail-command", "space")
+        await service.renameSpace(1, label: "Failed")
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertNotNil(service.lastError)
+        XCTAssertEqual(service.state, original)
+        XCTAssertTrue(queries.isEmpty)
+
+        try write("fail-command", "display")
+        await service.createSpace(onDisplay: 1)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(service.state, original)
+        XCTAssertTrue(queries.isEmpty)
+        XCTAssertFalse(arguments.contains("-m space --create"))
+    }
+
+    @MainActor
+    func testMutationFromOldGenerationDoesNotRefreshRestartedService() async throws {
+        try await startAndClearCalls()
+        try write("hold-mutation", "")
+        let mutation = Task { await service.renameSpace(1, label: "Old") }
+        await waitFor { arguments.contains("-m space 1 --label Old") }
+        var spaces = try readFixture("--spaces.json")
+        spaces[0]["label"] = "Restarted"
+        try writeFixture("--spaces.json", spaces)
+        stopService()
+        startService()
+        await waitFor { service.signalsRegistered && service.state.spaces.first?.label == "Restarted" }
+        let queryCount = queries.count
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("hold-mutation"))
+        await mutation.value
+        // Let any incorrectly queued follow-up reach the fixture CLI.
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(queries.count, queryCount)
     }
 
     @MainActor
@@ -582,9 +649,10 @@ final class YabaiServiceTests: XCTestCase {
         startService()
         await waitFor { service.isConnected && service.signalsRegistered }
         let adds = arguments.filter { $0.hasPrefix("-m signal --add ") }
-        XCTAssertEqual(adds.count, 2, "the already correct destroyed signal should not be registered again")
+        XCTAssertEqual(adds.count, 3, "keep the destroyed signal and add the missing move signal")
         XCTAssertTrue(adds.contains("-m signal --add event=window_title_changed action=\(titleAction) label=abar-window-title-changed"))
         XCTAssertTrue(adds.contains("-m signal --add event=window_focused action=\(fullAction) label=abar-window-focused"))
+        XCTAssertTrue(adds.contains("-m signal --add event=window_moved action=\(fullAction) label=abar-window-moved"))
         await stopAndWait()
     }
 
@@ -594,7 +662,8 @@ final class YabaiServiceTests: XCTestCase {
         try writeFixture("signals.json", [
             ["index": 0, "label": "abar-window-destroyed", "event": "window_destroyed", "app": "", "title": "", "action": fullAction],
             ["index": 1, "label": "abar-window-title-changed", "event": "window_title_changed", "app": "", "title": "", "action": fullAction + ".window-title-changed"],
-            ["index": 2, "label": "abar-window-focused", "event": "window_focused", "app": "", "title": "", "action": fullAction]
+            ["index": 2, "label": "abar-window-focused", "event": "window_focused", "app": "", "title": "", "action": fullAction],
+            ["index": 3, "label": "abar-window-moved", "event": "window_moved", "app": "", "title": "", "action": fullAction]
         ])
         startService()
         await waitFor { service.isConnected && service.signalsRegistered }

@@ -19,6 +19,7 @@ class YabaiService: ObservableObject {
         ("window_destroyed", "abar-window-destroyed"),
         ("window_title_changed", "abar-window-title-changed"),
         ("window_focused", "abar-window-focused"),
+        ("window_moved", "abar-window-moved"),
     ]
     private let settingsManager: SettingsManager
     private enum RefreshScope { case windows, full }
@@ -335,6 +336,7 @@ class YabaiService: ObservableObject {
         let generation = refreshGeneration
         do {
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", "--focus", String(index)])
+            await refreshAfterMutation(generation: generation)
         } catch {
             await handleError(error, generation: generation)
         }
@@ -345,6 +347,7 @@ class YabaiService: ObservableObject {
         let generation = refreshGeneration
         do {
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", String(index), "--label", label])
+            await refreshAfterMutation(generation: generation)
         } catch {
             await handleError(error, generation: generation)
         }
@@ -356,6 +359,7 @@ class YabaiService: ObservableObject {
         do {
             try await focusDisplay(displayIndex)
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", "--create"])
+            await refreshAfterMutation(generation: generation)
         } catch {
             await handleError(error, generation: generation)
         }
@@ -367,6 +371,7 @@ class YabaiService: ObservableObject {
         do {
             try await focusDisplay(displayIndex)
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", String(index), "--destroy"])
+            await refreshAfterMutation(generation: generation)
         } catch {
             await handleError(error, generation: generation)
         }
@@ -378,6 +383,7 @@ class YabaiService: ObservableObject {
         let targetIndex = direction == .left ? index - 1 : index + 1
         do {
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", String(index), "--swap", String(targetIndex)])
+            await refreshAfterMutation(generation: generation)
         } catch {
             await handleError(error, generation: generation)
         }
@@ -388,6 +394,7 @@ class YabaiService: ObservableObject {
         let generation = refreshGeneration
         do {
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "window", "--focus", String(id)])
+            await refreshAfterMutation(generation: generation)
         } catch {
             await handleError(error, generation: generation)
         }
@@ -398,7 +405,11 @@ class YabaiService: ObservableObject {
         try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "display", "--focus", String(index)])
     }
 
-    // Timer logic removed
+    @MainActor
+    private func refreshAfterMutation(generation: Int) {
+        guard generation == refreshGeneration else { return }
+        refresh()
+    }
 
     @MainActor
     private func handleError(_ error: Error, generation: Int) {
