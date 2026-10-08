@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Darwin
+import notify
 
 /// Service for interacting with yabai window manager
 class YabaiService: ObservableObject {
@@ -17,12 +18,26 @@ class YabaiService: ObservableObject {
     private var signalPath: String?
     private static let signalEvents = [
         ("window_destroyed", "abar-window-destroyed"),
+        ("window_created", "abar-window-created"),
+        ("window_minimized", "abar-window-minimized"),
+        ("window_deminimized", "abar-window-deminimized"),
         ("window_title_changed", "abar-window-title-changed"),
         ("window_focused", "abar-window-focused"),
         ("window_moved", "abar-window-moved"),
     ]
     private let settingsManager: SettingsManager
-    private enum RefreshScope { case windows, full }
+    private enum RefreshScope: Equatable { case focus(Int?), windows, full }
+    private var focusToken: Int32 = -1
+    // Native calls are injectable so token zero and registration failure are testable.
+    private let registerFocus: (String, inout Int32) -> UInt32
+    private let readFocus: (Int32, inout UInt64) -> UInt32
+    private let cancelFocus: (Int32) -> UInt32
+    private var requestRevision = 0
+    private var lastActivatedPID: pid_t?
+    private var projectionSupported = true
+    private let frontmostPID: () -> pid_t?
+    private static let windowFields = "id,pid,app,title,frame,subrole,display,space,stack-index,has-focus,is-visible,is-minimized,is-hidden,is-floating,is-sticky"
+    private var focusRefreshNotification: String { refreshNotification + ".window-focused" }
     private var isStarted = false
     private var refreshGeneration = 0
     private var refreshTask: Task<Void, Never>?
@@ -48,10 +63,18 @@ class YabaiService: ObservableObject {
 
     init(
         settingsManager: SettingsManager = .shared,
-        refreshNotification: String = "user.uid.\(getuid()).com.jeantinland.a-bar.yabai"
+        refreshNotification: String = "user.uid.\(getuid()).com.jeantinland.a-bar.yabai",
+        frontmostPID: @escaping () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier },
+        registerFocus: @escaping (String, inout Int32) -> UInt32 = { notify_register_check($0, &$1) },
+        readFocus: @escaping (Int32, inout UInt64) -> UInt32 = { notify_get_state($0, &$1) },
+        cancelFocus: @escaping (Int32) -> UInt32 = { notify_cancel($0) }
     ) {
         self.settingsManager = settingsManager
         self.refreshNotification = refreshNotification
+        self.frontmostPID = frontmostPID
+        self.registerFocus = registerFocus
+        self.readFocus = readFocus
+        self.cancelFocus = cancelFocus
     }
 
     private func setupObservers() {
@@ -70,7 +93,6 @@ class YabaiService: ObservableObject {
         let nc = NSWorkspace.shared.notificationCenter
         let notifications: [NSNotification.Name] = [
             NSWorkspace.didActivateApplicationNotification,
-            NSWorkspace.didDeactivateApplicationNotification,
             NSWorkspace.didLaunchApplicationNotification,
             NSWorkspace.didTerminateApplicationNotification,
             NSWorkspace.didHideApplicationNotification,
@@ -100,8 +122,16 @@ class YabaiService: ObservableObject {
     }
 
     // Handle NSWorkspace app notifications
-    private func handleAppNotification(_ note: Notification) {
-        refresh()
+    func handleAppNotification(_ note: Notification) {
+        if note.name == NSWorkspace.didActivateApplicationNotification {
+            let pid = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
+                ?? frontmostPID()
+            guard pid != lastActivatedPID else { return }
+            lastActivatedPID = pid
+            refresh(.focus(nil))
+        } else {
+            refresh()
+        }
     }
 
     /// Start the yabai service
@@ -110,7 +140,13 @@ class YabaiService: ObservableObject {
             guard signalPath != yabaiPath else { return }
             stop()
         }
-        for notification in [refreshNotification, titleRefreshNotification, moveRefreshNotification] {
+        // Keep the name alive while notifyutil sets state and posts from a separate process.
+        if registerFocus(focusRefreshNotification, &focusToken) != NOTIFY_STATUS_OK {
+            focusToken = -1
+        }
+        projectionSupported = true
+        lastActivatedPID = frontmostPID()
+        for notification in [refreshNotification, titleRefreshNotification, moveRefreshNotification, focusRefreshNotification] {
             CFNotificationCenterAddObserver(
                 CFNotificationCenterGetDarwinNotifyCenter(),
                 Unmanaged.passUnretained(self).toOpaque(),
@@ -121,7 +157,16 @@ class YabaiService: ObservableObject {
                     let generation = service.refreshGeneration
                     DispatchQueue.main.async { [weak service] in
                         guard let service, service.isStarted, generation == service.refreshGeneration else { return }
-                        if notification == service.moveRefreshNotification {
+                        if notification == service.focusRefreshNotification {
+                            var candidate: UInt64 = 0
+                            if service.focusToken >= 0,
+                               service.readFocus(service.focusToken, &candidate) == NOTIFY_STATUS_OK,
+                               candidate > 0, candidate <= UInt64(UInt32.max) {
+                                service.refresh(.focus(Int(candidate)))
+                            } else {
+                                service.refresh(.full)
+                            }
+                        } else if notification == service.moveRefreshNotification {
                             service.scheduleMoveRefresh()
                         } else {
                             service.refresh(notification == service.titleRefreshNotification ? .windows : .full)
@@ -143,7 +188,9 @@ class YabaiService: ObservableObject {
     func stop() {
         guard isStarted else { return }
         isStarted = false
-        for notification in [refreshNotification, titleRefreshNotification, moveRefreshNotification] {
+        if focusToken >= 0 { _ = cancelFocus(focusToken); focusToken = -1 }
+        lastActivatedPID = nil
+        for notification in [refreshNotification, titleRefreshNotification, moveRefreshNotification, focusRefreshNotification] {
             CFNotificationCenterRemoveObserver(
                 CFNotificationCenterGetDarwinNotifyCenter(),
                 Unmanaged.passUnretained(self).toOpaque(),
@@ -205,6 +252,8 @@ class YabaiService: ObservableObject {
         switch event {
         case "window_title_changed": notification = titleRefreshNotification
         case "window_moved": notification = moveRefreshNotification
+        case "window_focused" where focusToken >= 0:
+            return "/usr/bin/notifyutil -z 0 -s \(focusRefreshNotification) \"$YABAI_WINDOW_ID\" -p \(focusRefreshNotification)"
         default: notification = refreshNotification
         }
         return "/usr/bin/notifyutil -p \(notification)"
@@ -255,7 +304,12 @@ class YabaiService: ObservableObject {
 
     /// Keep one pending request, with complete snapshots taking precedence over title updates.
     private func enqueueRefresh(_ scope: RefreshScope) {
-        if scope == .full || pendingRefresh == nil { pendingRefresh = scope }
+        if scope == .full || pendingRefresh == nil {
+            pendingRefresh = scope
+        } else if pendingRefresh != .full {
+            // A windows read also carries focus; never discard a queued title update.
+            if scope == .windows || pendingRefresh != .windows { pendingRefresh = scope }
+        }
     }
 
     /// AX move delivery can be 140-290ms apart during a drag. Wait 300ms for the final relationships.
@@ -280,7 +334,8 @@ class YabaiService: ObservableObject {
 
     private func refresh(_ requestedScope: RefreshScope) {
         guard isStarted else { return }
-        if requestedScope == .full { cancelMoveRefresh() }
+        requestRevision += 1
+        if requestedScope == .full { cancelMoveRefresh(); hasFullSnapshot = false }
         enqueueRefresh(requestedScope)
         guard refreshTask == nil else { return }
         let generation = refreshGeneration
@@ -292,15 +347,31 @@ class YabaiService: ObservableObject {
                 // A structural event or title fallback supersedes any delayed move snapshot.
                 if scope == .full { cancelMoveRefresh() }
                 let path = yabaiPath
+                let revision = requestRevision
                 do {
                     var next: YabaiState
                     switch scope {
+                    case .focus(let id):
+                        let window: YabaiWindow = try await fetch("windows", path: path,
+                            selector: ["--window"] + (id.map { [String($0)] } ?? []))
+                        guard isStarted, generation == refreshGeneration, !Task.isCancelled else { return }
+                        guard revision == requestRevision else { continue }
+                        guard window.hasFocus, window.pid == frontmostPID().map(Int.init),
+                              id == nil || window.id == id,
+                              let patched = state.updatingFocus(window) else {
+                            enqueueRefresh(.full)
+                            continue
+                        }
+                        next = patched
                     case .full:
                         async let spaces: [YabaiSpace] = fetch("spaces", path: path)
                         async let windows: [YabaiWindow] = fetch("windows", path: path)
                         async let displays: [YabaiDisplay] = fetch("displays", path: path)
                         next = try await YabaiState(spaces: spaces, windows: windows, displays: displays)
                         next.windows = filteredWindows(next.windows)
+                        if next.focusedWindow == nil, let pid = frontmostPID() {
+                            next = next.selectingVisibleWindow(for: Int(pid))
+                        }
                     case .windows:
                         let windows = filteredWindows(try await fetch("windows", path: path))
                         guard isStarted, generation == refreshGeneration, !Task.isCancelled else { return }
@@ -321,11 +392,12 @@ class YabaiService: ObservableObject {
                     if lastError != nil { lastError = nil }
                 } catch {
                     guard isStarted, generation == refreshGeneration, !Task.isCancelled else { return }
+                    if case .focus = scope, revision != requestRevision { continue }
                     hasFullSnapshot = false
                     handleError(error, generation: generation)
                     // Retry a failed partial read once as a full snapshot. A failed full read
                     // waits for another event instead of creating an unbounded retry loop.
-                    if scope == .windows { enqueueRefresh(.full) }
+                    if scope != .full { enqueueRefresh(.full) }
                 }
             }
             refreshTask = nil
@@ -357,10 +429,31 @@ class YabaiService: ObservableObject {
         return previous.isEmpty
     }
 
-    /// Process I/O and decoding stay off the main actor.
-    private func fetch<T: Decodable>(_ collection: String, path: String) async throws -> T {
+    /// Serialize projection capability with lifecycle state; ShellExecutor performs I/O off-thread.
+    @MainActor
+    private func fetch<T: Decodable>(_ collection: String, path: String, selector: [String] = []) async throws -> T {
         try Task.checkCancellation()
-        let output = try await ShellExecutor.run(executable: path, arguments: ["-m", "query", "--\(collection)"])
+        let generation = refreshGeneration
+        let projected = collection == "windows" && projectionSupported
+        let base = ["-m", "query", "--\(collection)"]
+        let output: String
+        do {
+            output = try await ShellExecutor.run(executable: path,
+                arguments: base + (projected ? [Self.windowFields] : []) + selector)
+        } catch {
+            let message = error.localizedDescription
+            // Only an explicit rejection of our field argument disables projection.
+            guard projected, message.contains(Self.windowFields),
+                  message.contains("unknown option") || message.contains("unknown property") else { throw error }
+            guard generation == refreshGeneration, !Task.isCancelled else { throw CancellationError() }
+            projectionSupported = false
+            output = try await ShellExecutor.run(executable: path, arguments: base + selector)
+        }
+        return try await Self.decode(output)
+    }
+
+    /// Nonisolated async decoding leaves large snapshots and sanitizer work off the UI actor.
+    private static func decode<T: Decodable>(_ output: String) async throws -> T {
         try Task.checkCancellation()
         let decoder = JSONDecoder()
         // Valid output needs no repair and must retain its literal string values.

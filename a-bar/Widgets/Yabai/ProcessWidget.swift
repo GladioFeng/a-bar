@@ -1,10 +1,36 @@
 import SwiftUI
 
-/// Widget showing the currently focused application and window
+/// Compute ordering from raw geometry before comparing the values the widget renders.
 struct ProcessWidget: View {
     @EnvironmentObject var settings: SettingsManager
     @EnvironmentObject var yabaiService: YabaiService
-    
+
+    var body: some View {
+        let state = yabaiService.state
+        let windows: [YabaiWindow] = {
+            guard settings.settings.widgets.process.showCurrentSpaceOnly else { return state.windows }
+            guard let space = state.focusedSpace else { return [] }
+            return state.windows.filter {
+                $0.space == space.index || ($0.isSticky && $0.id == state.focusedWindow?.id)
+            }
+        }()
+        let ordered = WindowFilter.orderedByStackThenPosition(windows, stackIndex: \.stackIndex, x: \.frame.x)
+        ProcessContent(windows: ordered.map(YabaiWindowPresentation.init),
+                       layout: state.focusedSpace?.type, service: yabaiService)
+            .equatable()
+    }
+}
+
+private struct ProcessContent: View, Equatable {
+    let windows: [YabaiWindowPresentation]
+    let layout: YabaiSpace.SpaceType?
+    let service: YabaiService
+    @EnvironmentObject var settings: SettingsManager
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.windows == rhs.windows && lhs.layout == rhs.layout && lhs.service === rhs.service
+    }
+
     @State private var focusedWindowPressed = false
     @State private var unfocusedWindowPressed: Set<Int> = []
     
@@ -21,30 +47,15 @@ struct ProcessWidget: View {
         let userFont: Font = globalSettings.fontName.isEmpty ? .system(size: CGFloat(globalSettings.fontSize)) : .custom(globalSettings.fontName, size: CGFloat(globalSettings.fontSize))
         let userFontSmall: Font = globalSettings.fontName.isEmpty ? .system(size: CGFloat(Double(globalSettings.fontSize) * 0.9)) : .custom(globalSettings.fontName, size: CGFloat(Double(globalSettings.fontSize) * 0.9))
 
-        let state = yabaiService.state
-        let focusedWin = state.focusedWindow
-
-        let windowsOnCurrentSpace: [YabaiWindow] = {
-            if processSettings.showCurrentSpaceOnly {
-                guard let focusedSpace = state.focusedSpace else { return [] }
-                return state.windows.filter {
-                    $0.space == focusedSpace.index || ($0.isSticky && $0.id == focusedWin?.id)
-                }
-            }
-            return state.windows
-        }()
-
-        // Order windows the same way as OpenedAppsView, by the same call
-        let orderedWindows = WindowFilter.orderedByStackThenPosition(
-            windowsOnCurrentSpace, stackIndex: \.stackIndex, x: \.frame.x
-        )
+        let orderedWindows = windows
+        let focusedWin = windows.first { $0.hasFocus }
 
       HStack(spacing: globalSettings.barElementGap) {
-        if processSettings.spaceLayoutDisplay != .off, let space = state.focusedSpace {
-          stateBadge("Space \(space.type.rawValue)", font: userFontSmall,
-                     systemImage: processSettings.spaceLayoutDisplay == .icon ? space.type.systemImage : nil)
-            .help("Current space layout: \(space.type.rawValue)")
-            .accessibilityLabel("Current space layout: \(space.type.rawValue)")
+        if processSettings.spaceLayoutDisplay != .off, let layout {
+          stateBadge("Space \(layout.rawValue)", font: userFontSmall,
+                     systemImage: processSettings.spaceLayoutDisplay == .icon ? layout.systemImage : nil)
+            .help("Current space layout: \(layout.rawValue)")
+            .accessibilityLabel("Current space layout: \(layout.rawValue)")
         }
         if orderedWindows.isEmpty {
             // No windows: show desktop
@@ -187,9 +198,9 @@ struct ProcessWidget: View {
         )
     }
 
-    private func focusWindow(_ window: YabaiWindow) {
+    private func focusWindow(_ window: YabaiWindowPresentation) {
         Task {
-            await yabaiService.focusWindow(window.id)
+            await service.focusWindow(window.id)
         }
     }
 }

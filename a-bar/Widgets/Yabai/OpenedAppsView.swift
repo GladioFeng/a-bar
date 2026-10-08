@@ -1,37 +1,29 @@
 import SwiftUI
 
-/// View showing app icons for windows in a space
-struct OpenedAppsView: View {
-    let space: YabaiSpace
-    let displayIndex: Int
-    
-    @EnvironmentObject var settings: SettingsManager
-    @EnvironmentObject var yabaiService: YabaiService
-    
-    private var spacesSettings: SpacesWidgetSettings {
-        settings.settings.widgets.spaces
+struct OpenedAppsView: View, Equatable {
+    let windows: [YabaiWindowPresentation]
+    let service: YabaiService
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.windows == rhs.windows && lhs.service === rhs.service
     }
-    
-    private var theme: ABarTheme {
-        ThemeManager.currentTheme(for: settings.settings.theme)
-    }
-    
+
     var body: some View {
-        if !displayedApps.isEmpty {
+        if !windows.isEmpty {
             HStack(spacing: 1) {
-                ForEach(displayedApps, id: \.id) { window in
-                    AppIconButton(window: window)
+                ForEach(windows) { window in
+                    AppIconButton(window: window, service: service).equatable()
                 }
             }
         }
     }
-    
-    private var displayedApps: [YabaiWindow] {
+
+    static func windows(for space: YabaiSpace, state: YabaiState, settings spacesSettings: SpacesWidgetSettings) -> [YabaiWindowPresentation] {
         let windows: [YabaiWindow]
         if spacesSettings.displayStickyWindowsSeparately {
-            windows = yabaiService.state.nonStickyWindows(forSpace: space.index)
+            windows = state.nonStickyWindows(forSpace: space.index)
         } else {
-            windows = yabaiService.state.windows(forSpace: space.index)
+            windows = state.windows(forSpace: space.index)
         }
         // Apply exclusions
         var filtered = WindowFilter.excludingWindows(
@@ -49,16 +41,20 @@ struct OpenedAppsView: View {
         // Order down a stack first, then left to right
         return WindowFilter.orderedByStackThenPosition(
             filtered, stackIndex: \.stackIndex, x: \.frame.x
-        )
+        ).map(YabaiWindowPresentation.init)
     }
 }
 
-struct AppIconButton: View {
-    let window: YabaiWindow
+struct AppIconButton: View, Equatable {
+    let window: YabaiWindowPresentation
     
     @EnvironmentObject var settings: SettingsManager
-    @EnvironmentObject var yabaiService: YabaiService
+    let service: YabaiService
     
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.window == rhs.window && lhs.service === rhs.service
+    }
+
     @State private var isHovered = false
     
     private var theme: ABarTheme {
@@ -82,7 +78,7 @@ struct AppIconButton: View {
     
     private func focusWindow() {
         Task {
-            await yabaiService.focusWindow(window.id)
+            await service.focusWindow(window.id)
         }
     }
 }

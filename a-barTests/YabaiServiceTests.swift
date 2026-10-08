@@ -39,7 +39,14 @@ final class YabaiServiceTests: XCTestCase {
         if [ "$2" = query ]; then
           while [ -f "$root/hold" ]; do sleep 0.01; done
           sleep 0.02
-          cat "$root/$3.json"
+          if [ -f "$root/reject-projection" ] && [ "$4" != --window ] && [ -n "$4" ]; then
+            printf "unknown option '%s'\\n" "$4" >&2
+            exit 1
+          fi
+          case "$*" in
+            *" --window "*|*" --window") cat "$root/single-window.json" ;;
+            *) cat "$root/$3.json" ;;
+          esac
         elif [ "$3" = --list ]; then
           if [ -f "$root/signals.json" ]; then cat "$root/signals.json"; else printf '[]\\n'; fi
         elif [ "$2" != signal ]; then
@@ -54,7 +61,7 @@ final class YabaiServiceTests: XCTestCase {
         try write("calls", "")
         try write("--spaces.json", #"[{"id":1,"index":1,"display":1,"type":"bsp","windows":[10],"has-focus":true}]"#)
         try write("--windows.json", #"[{"id":10,"pid":123,"app":"Fixture","title":"Example","display":1,"space":1,"subrole":"AXStandardWindow","frame":{"x":0,"y":0,"w":100,"h":100},"has-focus":true}]"#)
-        try write("--displays.json", #"[{"id":1,"uuid":"fixture","index":1,"frame":{"x":0,"y":0,"w":1920,"h":1080},"spaces":[1]}]"#)
+        try write("--displays.json", #"[{"id":1,"uuid":"fixture","index":1,"frame":{"x":0,"y":0,"w":1920,"h":1080},"spaces":[1],"has-focus":true}]"#)
         var settings = ABarSettings()
         settings.global.yabaiPath = executable.path
         let config = directory.appendingPathComponent("config.json")
@@ -63,7 +70,7 @@ final class YabaiServiceTests: XCTestCase {
         notificationName = "user.uid.\(getuid()).a-bar-test.\(UUID())"
         service = YabaiService(
             settingsManager: manager,
-            refreshNotification: notificationName)
+            refreshNotification: notificationName, frontmostPID: { 123 })
     }
 
     override func tearDownWithError() throws {
@@ -107,7 +114,7 @@ final class YabaiServiceTests: XCTestCase {
         let root = URL(fileURLWithPath: manager.settings.global.yabaiPath)
             .deletingLastPathComponent().standardizedFileURL
         if let previous = activeServiceDirectory, previous != root {
-            expectedRemovals[previous, default: 0] += 4
+            expectedRemovals[previous, default: 0] += 7
         }
         activeServiceDirectory = root
         service.start()
@@ -115,7 +122,7 @@ final class YabaiServiceTests: XCTestCase {
 
     private func stopService() {
         if let root = activeServiceDirectory {
-            expectedRemovals[root, default: 0] += 4
+            expectedRemovals[root, default: 0] += 7
             activeServiceDirectory = nil
         }
         service.stop()
@@ -323,6 +330,17 @@ final class YabaiServiceTests: XCTestCase {
         try await postRefresh(titleOnly: false)
         await waitFor { service.state.focusedWindow?.layoutLabel == "stack" }
         XCTAssertGreaterThan(renderedWidth(), 65)
+
+        // An unknown current Space keeps the existing Desktop presentation, including
+        // when a sticky window still reports focus in the same complete snapshot.
+        fixture[0]["is-sticky"] = true
+        try writeFixture("--windows.json", fixture)
+        var spaces = try readFixture("--spaces.json")
+        spaces[0]["has-focus"] = false
+        try writeFixture("--spaces.json", spaces)
+        service.refresh()
+        await waitFor { service.state.focusedSpace == nil }
+        XCTAssertLessThan(renderedWidth(), 40)
         await stopAndWait()
     }
 
@@ -781,6 +799,208 @@ final class YabaiServiceTests: XCTestCase {
     }
 
     @MainActor
+    func testFocusQueriesOneKnownWindowAndClearsPreviousFocus() async throws {
+        var windows = try readFixture("--windows.json")
+        var second = windows[0]
+        second["id"] = 11
+        second["has-focus"] = false
+        windows.append(second)
+        try writeFixture("--windows.json", windows)
+        var spaces = try readFixture("--spaces.json")
+        spaces[0]["windows"] = [10, 11]
+        try writeFixture("--spaces.json", spaces)
+        try await startAndClearCalls()
+        second["has-focus"] = true
+        try write("single-window.json", String(decoding: JSONSerialization.data(withJSONObject: second), as: UTF8.self))
+        let name = notificationName! + ".window-focused"
+        try await ShellExecutor.run(executable: "/usr/bin/notifyutil", arguments: ["-z", "0", "-s", name, "11", "-p", name])
+        await waitFor { service.state.focusedWindow?.id == 11 }
+        XCTAssertEqual(queries, ["query --windows"])
+        XCTAssertTrue(arguments.contains { $0.hasSuffix("--window 11") })
+        XCTAssertEqual(service.state.windows.filter(\.hasFocus).count, 1)
+        await stopAndWait()
+    }
+
+    @MainActor
+    func testProjectionRejectionFallsBackOncePerGeneration() async throws {
+        try write("reject-projection", "")
+        startService()
+        await waitFor { service.isConnected && service.signalsRegistered }
+        XCTAssertEqual(queries.filter { $0 == "query --windows" }.count, 2)
+        try write("calls", "")
+        try write("arguments", "")
+        service.refresh()
+        await waitFor { queries.count == 3 }
+        XCTAssertTrue(arguments.contains("-m query --windows"))
+        await stopAndWait()
+    }
+
+    private func writeSingleWindow(_ window: [String: Any]) throws {
+        try write("single-window.json", String(decoding: JSONSerialization.data(withJSONObject: window), as: UTF8.self))
+    }
+
+    @MainActor
+    private func postFocus(_ id: Int) async throws {
+        let name = notificationName! + ".window-focused"
+        try await ShellExecutor.run(executable: "/usr/bin/notifyutil",
+            arguments: ["-z", "0", "-s", name, String(id), "-p", name])
+    }
+
+    @MainActor
+    func testDuplicateActivationDoesNotQueryButDifferentAppDoes() async throws {
+        var pid: pid_t = 123
+        service = YabaiService(settingsManager: manager, refreshNotification: notificationName, frontmostPID: { pid })
+        var windows = try readFixture("--windows.json")
+        var second = windows[0]
+        second["id"] = 11
+        second["pid"] = 456
+        second["app"] = "Second"
+        second["has-focus"] = false
+        windows.append(second)
+        try writeFixture("--windows.json", windows)
+        var spaces = try readFixture("--spaces.json")
+        spaces[0]["windows"] = [10, 11]
+        try writeFixture("--spaces.json", spaces)
+        try await startAndClearCalls()
+        service.handleAppNotification(Notification(name: NSWorkspace.didActivateApplicationNotification))
+        try await Task.sleep(nanoseconds: 70_000_000)
+        XCTAssertTrue(queries.isEmpty)
+        pid = 456
+        second["has-focus"] = true
+        try writeSingleWindow(second)
+        service.handleAppNotification(Notification(name: NSWorkspace.didActivateApplicationNotification))
+        await waitFor { service.state.focusedWindow?.id == 11 }
+        XCTAssertEqual(queries, ["query --windows"])
+        XCTAssertTrue(arguments.contains { $0.hasSuffix("--window") })
+        service.handleAppNotification(Notification(name: NSWorkspace.didActivateApplicationNotification))
+        try await Task.sleep(nanoseconds: 70_000_000)
+        XCTAssertEqual(queries.count, 1)
+    }
+
+    @MainActor
+    func testUncertainFocusFallsBackExactlyOnce() async throws {
+        let original = try XCTUnwrap(readFixture("--windows.json").first)
+        // Unknown identity, out-of-order nonfocused ID, wrong front PID, cross Space/display,
+        // minimized and invalid native state must never patch the known stable snapshot.
+        for (key, value) in [("id", 99 as Any), ("has-focus", false), ("pid", 456),
+                             ("space", 2), ("display", 2), ("is-minimized", true)] {
+            try await startAndClearCalls()
+            var candidate = original
+            candidate[key] = value
+            try writeSingleWindow(candidate)
+            try await postFocus(candidate["id"] as! Int)
+            await waitFor { queries.count == 4 }
+            try await Task.sleep(nanoseconds: 80_000_000)
+            XCTAssertEqual(queries.filter { $0 == "query --spaces" }.count, 1, key)
+            XCTAssertEqual(queries.filter { $0 == "query --displays" }.count, 1, key)
+            XCTAssertEqual(service.state.focusedWindow?.id, 10, key)
+            await stopAndWait()
+        }
+    }
+
+    @MainActor
+    func testStructuralEventSupersedesLateFocusAndRebuildsMembership() async throws {
+        try await startAndClearCalls()
+        let original = try XCTUnwrap(readFixture("--windows.json").first)
+        var late = original
+        late["title"] = "Late focus"
+        try writeSingleWindow(late)
+        try write("hold", "")
+        try await postFocus(10)
+        await waitFor { queries.count == 1 }
+        var current = original
+        current["title"] = "Structural result"
+        try writeFixture("--windows.json", [current])
+        service.refresh()
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("hold"))
+        await waitFor { service.state.focusedWindow?.title == "Structural result" }
+        XCTAssertEqual(queries.count, 4)
+        XCTAssertEqual(queries.filter { $0 == "query --spaces" }.count, 1)
+    }
+
+    @MainActor
+    func testLatestFocusWinsWhileFirstQueryIsHeld() async throws {
+        var windows = try readFixture("--windows.json")
+        var second = windows[0]
+        second["id"] = 11
+        second["has-focus"] = false
+        windows.append(second)
+        try writeFixture("--windows.json", windows)
+        var spaces = try readFixture("--spaces.json")
+        spaces[0]["windows"] = [10, 11]
+        try writeFixture("--spaces.json", spaces)
+        try await startAndClearCalls()
+        try write("hold", "")
+        try writeSingleWindow(windows[0])
+        try await postFocus(10)
+        await waitFor { queries.count == 1 }
+        second["has-focus"] = true
+        try writeSingleWindow(second)
+        try await postFocus(11)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("hold"))
+        await waitFor { service.state.focusedWindow?.id == 11 }
+        XCTAssertEqual(queries, ["query --windows", "query --windows"])
+    }
+
+    @MainActor
+    func testZeroTokenIsReadAndCancelledAndRegistrationFailureUsesFullChannel() async throws {
+        var cancelled: [Int32] = []
+        var reads: [Int32] = []
+        service = YabaiService(settingsManager: manager, refreshNotification: notificationName,
+            frontmostPID: { 123 }, registerFocus: { _, token in token = 0; return 0 },
+            readFocus: { token, value in reads.append(token); value = 10; return 0 },
+            cancelFocus: { token in cancelled.append(token); return 0 })
+        let window = try XCTUnwrap(readFixture("--windows.json").first)
+        try writeSingleWindow(window)
+        try await startAndClearCalls()
+        postNotification(notificationName + ".window-focused")
+        await waitFor { queries.count == 1 && reads == [0] }
+        await stopAndWait()
+        XCTAssertEqual(cancelled, [0])
+        service = YabaiService(settingsManager: manager, refreshNotification: notificationName,
+            frontmostPID: { 123 }, registerFocus: { _, _ in 1 },
+            cancelFocus: { token in cancelled.append(token); return 0 })
+        try write("arguments", "")
+        startService()
+        await waitFor { service.signalsRegistered }
+        XCTAssertTrue(arguments.contains("-m signal --add event=window_focused action=/usr/bin/notifyutil -p \(notificationName!) label=abar-window-focused"))
+        await stopAndWait()
+        XCTAssertEqual(cancelled, [0])
+    }
+
+    func testStickyFocusPreservesCurrentSpaceAndPresentationIgnoresGeometry() throws {
+        var raw = try XCTUnwrap(readFixture("--windows.json").first)
+        raw["is-sticky"] = true
+        raw["space"] = 2
+        let decode: ([String: Any]) throws -> YabaiWindow = {
+            try JSONDecoder().decode(YabaiWindow.self, from: JSONSerialization.data(withJSONObject: $0))
+        }
+        let window = try decode(raw)
+        let spaces = try JSONDecoder().decode([YabaiSpace].self, from: Data(#"[{"id":1,"index":1,"display":1,"type":"bsp","windows":[],"has-focus":true},{"id":2,"index":2,"display":1,"type":"bsp","windows":[10]}]"#.utf8))
+        let displays = try JSONDecoder().decode([YabaiDisplay].self, from: Data(contentsOf: directory.appendingPathComponent("--displays.json")))
+        let state = YabaiState(spaces: spaces, windows: [window], displays: displays)
+        XCTAssertEqual(state.updatingFocus(window)?.focusedSpace?.index, 1)
+        raw["frame"] = ["x": 500, "y": 400, "w": 200, "h": 200]
+        let moved = try decode(raw)
+        XCTAssertNotEqual(window, moved)
+        XCTAssertEqual(YabaiWindowPresentation(window), YabaiWindowPresentation(moved))
+        raw["title"] = "Changed"
+        XCTAssertNotEqual(YabaiWindowPresentation(window), YabaiWindowPresentation(try decode(raw)))
+        raw["has-focus"] = false
+        raw["is-visible"] = true
+        let unmanaged = try decode(raw)
+        let fallback = YabaiState(spaces: spaces, windows: [unmanaged], displays: displays)
+        XCTAssertEqual(fallback.selectingVisibleWindow(for: 123).focusedWindow?.id, 10)
+        XCTAssertNil(fallback.selectingVisibleWindow(for: 999).focusedWindow)
+    }
+
+    private var focusAction: String {
+        let name = notificationName! + ".window-focused"
+        return "/usr/bin/notifyutil -z 0 -s \(name) \"$YABAI_WINDOW_ID\" -p \(name)"
+    }
+
+    @MainActor
     func testSignalMigrationChecksEventAndActionAndKeepsLabels() async throws {
         let fullAction = "/usr/bin/notifyutil -p \(notificationName!)"
         let titleAction = fullAction + ".window-title-changed"
@@ -792,9 +1012,9 @@ final class YabaiServiceTests: XCTestCase {
         startService()
         await waitFor { service.isConnected && service.signalsRegistered }
         let adds = arguments.filter { $0.hasPrefix("-m signal --add ") }
-        XCTAssertEqual(adds.count, 3, "keep the destroyed signal and add the missing move signal")
+        XCTAssertEqual(adds.count, 6, "keep the destroyed signal and register the other six")
         XCTAssertTrue(adds.contains("-m signal --add event=window_title_changed action=\(titleAction) label=abar-window-title-changed"))
-        XCTAssertTrue(adds.contains("-m signal --add event=window_focused action=\(fullAction) label=abar-window-focused"))
+        XCTAssertTrue(adds.contains("-m signal --add event=window_focused action=\(focusAction) label=abar-window-focused"))
         XCTAssertTrue(adds.contains("-m signal --add event=window_moved action=\(fullAction).window-moved label=abar-window-moved"))
         await stopAndWait()
     }
@@ -803,9 +1023,12 @@ final class YabaiServiceTests: XCTestCase {
     func testCurrentSignalActionsAreNotRegisteredAgain() async throws {
         let fullAction = "/usr/bin/notifyutil -p \(notificationName!)"
         try writeFixture("signals.json", [
+            ["index": 4, "label": "abar-window-created", "event": "window_created", "app": "", "title": "", "action": fullAction],
+            ["index": 5, "label": "abar-window-minimized", "event": "window_minimized", "app": "", "title": "", "action": fullAction],
+            ["index": 6, "label": "abar-window-deminimized", "event": "window_deminimized", "app": "", "title": "", "action": fullAction],
             ["index": 0, "label": "abar-window-destroyed", "event": "window_destroyed", "app": "", "title": "", "action": fullAction],
             ["index": 1, "label": "abar-window-title-changed", "event": "window_title_changed", "app": "", "title": "", "action": fullAction + ".window-title-changed"],
-            ["index": 2, "label": "abar-window-focused", "event": "window_focused", "app": "", "title": "", "action": fullAction],
+            ["index": 2, "label": "abar-window-focused", "event": "window_focused", "app": "", "title": "", "action": focusAction],
             ["index": 3, "label": "abar-window-moved", "event": "window_moved", "app": "", "title": "", "action": fullAction + ".window-moved"]
         ])
         startService()
@@ -818,9 +1041,12 @@ final class YabaiServiceTests: XCTestCase {
     func testLegacyMoveSignalMigratesWithoutReRegisteringOtherSignals() async throws {
         let action = "/usr/bin/notifyutil -p \(notificationName!)"
         try writeFixture("signals.json", [
+            ["index": 4, "label": "abar-window-created", "event": "window_created", "app": "", "title": "", "action": action],
+            ["index": 5, "label": "abar-window-minimized", "event": "window_minimized", "app": "", "title": "", "action": action],
+            ["index": 6, "label": "abar-window-deminimized", "event": "window_deminimized", "app": "", "title": "", "action": action],
             ["index": 0, "label": "abar-window-destroyed", "event": "window_destroyed", "app": "", "title": "", "action": action],
             ["index": 1, "label": "abar-window-title-changed", "event": "window_title_changed", "app": "", "title": "", "action": action + ".window-title-changed"],
-            ["index": 2, "label": "abar-window-focused", "event": "window_focused", "app": "", "title": "", "action": action],
+            ["index": 2, "label": "abar-window-focused", "event": "window_focused", "app": "", "title": "", "action": focusAction],
             ["index": 3, "label": "abar-window-moved", "event": "window_moved", "app": "", "title": "", "action": action]
         ])
         startService()
