@@ -161,6 +161,20 @@ final class YabaiServiceTests: XCTestCase {
         try write("arguments", "")
     }
 
+    private func registeredMoveNotification() throws -> String {
+        let action = try XCTUnwrap(arguments.first {
+            $0.hasPrefix("-m signal --add event=window_moved ")
+        })
+        let notification = action.components(separatedBy: "action=/usr/bin/notifyutil -p ")
+            .last?.components(separatedBy: " label=").first
+        return try XCTUnwrap(notification)
+    }
+
+    private func postNotification(_ name: String) {
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName(name as CFString), nil, nil, true)
+    }
+
     @MainActor
     private func stopAndWait() async {
         stopService()
@@ -341,6 +355,135 @@ final class YabaiServiceTests: XCTestCase {
         XCTAssertEqual(states.first?.spaces.count, 1)
         XCTAssertEqual(states.first?.windows.count, 1)
         XCTAssertEqual(states.first?.displays.count, 1)
+    }
+
+    @MainActor
+    func testMoveBurstFetchesOneLatestSnapshotAfterDraggingStops() async throws {
+        startService()
+        await waitFor { service.isConnected && service.signalsRegistered }
+        let notification = try registeredMoveNotification()
+        try write("calls", "")
+        var publications = 0
+        service.$state.dropFirst().sink { _ in publications += 1 }.store(in: &observations)
+        var windows = try readFixture("--windows.json")
+        for step in 1...20 {
+            windows[0]["frame"] = ["x": step * 10, "y": 0, "w": 100, "h": 100]
+            try writeFixture("--windows.json", windows)
+            postNotification(notification)
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let queriesDuringDrag = queries.count
+        windows[0]["display"] = 2
+        windows[0]["space"] = 2
+        try writeFixture("--windows.json", windows)
+        var spaces = try readFixture("--spaces.json")
+        spaces[0]["id"] = 2
+        spaces[0]["index"] = 2
+        spaces[0]["display"] = 2
+        try writeFixture("--spaces.json", spaces)
+        var displays = try readFixture("--displays.json")
+        displays[0]["id"] = 2
+        displays[0]["index"] = 2
+        displays[0]["spaces"] = [2]
+        try writeFixture("--displays.json", displays)
+        let stoppedAt = Date()
+        postNotification(notification)
+        await waitFor { service.state.focusedWindow?.display == 2 }
+        try await Task.sleep(nanoseconds: 120_000_000)
+        print("Move burst: during=\(queriesDuringDrag), total=\(queries.count), publications=\(publications), settled=\(Date().timeIntervalSince(stoppedAt))s")
+        XCTAssertEqual(queriesDuringDrag, 0, "moving continuously must not run full queries for every frame")
+        XCTAssertEqual(queries.count, 3, "one full snapshot after the burst, including Space/display changes")
+        XCTAssertEqual(publications, 1, "do not invalidate the bar for each intermediate frame")
+        XCTAssertEqual(service.state.spaces.first?.id, 2)
+        XCTAssertEqual(service.state.displays.first?.index, 2)
+        await stopAndWait()
+    }
+
+    @MainActor
+    func testFocusRefreshSupersedesMoveDelayWithoutASecondQueryBatch() async throws {
+        startService()
+        await waitFor { service.isConnected && service.signalsRegistered }
+        let move = try registeredMoveNotification()
+        try write("calls", "")
+        postNotification(move)
+        try await Task.sleep(nanoseconds: 30_000_000)
+        var windows = try readFixture("--windows.json")
+        windows[0]["title"] = "Urgent focus"
+        try writeFixture("--windows.json", windows)
+        let requestedAt = Date()
+        postNotification(notificationName)
+        await waitFor { queries.count >= 3 }
+        let elapsed = Date().timeIntervalSince(requestedAt)
+        XCTAssertLessThan(elapsed, 0.09, "focus must bypass the 300ms movement delay")
+        await waitFor { service.state.focusedWindow?.title == "Urgent focus" }
+        try await Task.sleep(nanoseconds: 350_000_000)
+        XCTAssertEqual(queries.count, 3, "the urgent full snapshot supersedes the deferred move")
+        await stopAndWait()
+    }
+
+    @MainActor
+    func testSparseMoveDeliveryStillCoalescesDuringContinuousDragging() async throws {
+        startService()
+        await waitFor { service.isConnected && service.signalsRegistered }
+        let move = try registeredMoveNotification()
+        try write("calls", "")
+        var windows = try readFixture("--windows.json")
+        // Real AX delivery was 140-290ms apart; a 100ms debounce fires between these events.
+        for step in 1...6 {
+            windows[0]["frame"] = ["x": step * 10, "y": 0, "w": 100, "h": 100]
+            try writeFixture("--windows.json", windows)
+            postNotification(move)
+            try await Task.sleep(nanoseconds: 160_000_000)
+        }
+        XCTAssertTrue(queries.isEmpty, "coalesced AX delivery must not look like six separate completed drags")
+        await waitFor { service.state.focusedWindow?.frame.x == 60 }
+        XCTAssertEqual(queries.count, 3)
+        await stopAndWait()
+    }
+
+    @MainActor
+    func testPendingMoveStopsAndCannotRefreshANewGeneration() async throws {
+        startService()
+        await waitFor { service.isConnected && service.signalsRegistered }
+        let move = try registeredMoveNotification()
+        try write("calls", "")
+        postNotification(move)
+        try await Task.sleep(nanoseconds: 30_000_000)
+        await stopAndWait()
+        let stoppedState = service.state
+        postNotification(move)
+        try await Task.sleep(nanoseconds: 350_000_000)
+        XCTAssertTrue(queries.isEmpty, "stopping cancels and unregisters delayed movement work")
+        XCTAssertEqual(service.state, stoppedState)
+
+        try write("calls", "")
+        startService()
+        await waitFor { service.isConnected && service.signalsRegistered }
+        try await Task.sleep(nanoseconds: 350_000_000)
+        XCTAssertEqual(queries.count, 3, "the old deferred callback cannot add a batch after restart")
+        await stopAndWait()
+    }
+
+    @MainActor
+    func testChangingPathWhileMoveIsPendingOnlyReadsTheNewSource() async throws {
+        startService()
+        await waitFor { service.isConnected && service.signalsRegistered }
+        let move = try registeredMoveNotification()
+        try write("calls", "")
+        postNotification(move)
+        try await Task.sleep(nanoseconds: 30_000_000)
+        let other = directory.appendingPathComponent("new-move-source")
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        for name in ["yabai", "--spaces.json", "--windows.json", "--displays.json"] {
+            try FileManager.default.copyItem(at: directory.appendingPathComponent(name), to: other.appendingPathComponent(name))
+        }
+        manager.update { $0.global.yabaiPath = other.appendingPathComponent("yabai").path }
+        startService()
+        await waitFor { service.isConnected && service.signalsRegistered }
+        try await Task.sleep(nanoseconds: 350_000_000)
+        XCTAssertTrue(queries.isEmpty, "the old source's pending move must be cancelled")
+        XCTAssertEqual(log("calls", at: other).filter { $0.hasPrefix("query ") }.count, 3)
+        await stopAndWait()
     }
 
     @MainActor
@@ -652,7 +795,7 @@ final class YabaiServiceTests: XCTestCase {
         XCTAssertEqual(adds.count, 3, "keep the destroyed signal and add the missing move signal")
         XCTAssertTrue(adds.contains("-m signal --add event=window_title_changed action=\(titleAction) label=abar-window-title-changed"))
         XCTAssertTrue(adds.contains("-m signal --add event=window_focused action=\(fullAction) label=abar-window-focused"))
-        XCTAssertTrue(adds.contains("-m signal --add event=window_moved action=\(fullAction) label=abar-window-moved"))
+        XCTAssertTrue(adds.contains("-m signal --add event=window_moved action=\(fullAction).window-moved label=abar-window-moved"))
         await stopAndWait()
     }
 
@@ -663,11 +806,28 @@ final class YabaiServiceTests: XCTestCase {
             ["index": 0, "label": "abar-window-destroyed", "event": "window_destroyed", "app": "", "title": "", "action": fullAction],
             ["index": 1, "label": "abar-window-title-changed", "event": "window_title_changed", "app": "", "title": "", "action": fullAction + ".window-title-changed"],
             ["index": 2, "label": "abar-window-focused", "event": "window_focused", "app": "", "title": "", "action": fullAction],
-            ["index": 3, "label": "abar-window-moved", "event": "window_moved", "app": "", "title": "", "action": fullAction]
+            ["index": 3, "label": "abar-window-moved", "event": "window_moved", "app": "", "title": "", "action": fullAction + ".window-moved"]
         ])
         startService()
         await waitFor { service.isConnected && service.signalsRegistered }
         XCTAssertFalse(calls.contains("signal --add"))
+        await stopAndWait()
+    }
+
+    @MainActor
+    func testLegacyMoveSignalMigratesWithoutReRegisteringOtherSignals() async throws {
+        let action = "/usr/bin/notifyutil -p \(notificationName!)"
+        try writeFixture("signals.json", [
+            ["index": 0, "label": "abar-window-destroyed", "event": "window_destroyed", "app": "", "title": "", "action": action],
+            ["index": 1, "label": "abar-window-title-changed", "event": "window_title_changed", "app": "", "title": "", "action": action + ".window-title-changed"],
+            ["index": 2, "label": "abar-window-focused", "event": "window_focused", "app": "", "title": "", "action": action],
+            ["index": 3, "label": "abar-window-moved", "event": "window_moved", "app": "", "title": "", "action": action]
+        ])
+        startService()
+        await waitFor { service.isConnected && service.signalsRegistered }
+        XCTAssertEqual(arguments.filter { $0.hasPrefix("-m signal --add ") }, [
+            "-m signal --add event=window_moved action=\(action).window-moved label=abar-window-moved"
+        ])
         await stopAndWait()
     }
 

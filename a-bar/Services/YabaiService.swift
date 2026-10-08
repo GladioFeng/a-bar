@@ -26,11 +26,16 @@ class YabaiService: ObservableObject {
     private var isStarted = false
     private var refreshGeneration = 0
     private var refreshTask: Task<Void, Never>?
+    private var moveRefreshTask: Task<Void, Never>?
     private var pendingRefresh: RefreshScope?
     private var hasFullSnapshot = false
 
     private var titleRefreshNotification: String {
         refreshNotification + ".window-title-changed"
+    }
+
+    private var moveRefreshNotification: String {
+        refreshNotification + ".window-moved"
     }
 
     private var yabaiPath: String {
@@ -105,7 +110,7 @@ class YabaiService: ObservableObject {
             guard signalPath != yabaiPath else { return }
             stop()
         }
-        for notification in [refreshNotification, titleRefreshNotification] {
+        for notification in [refreshNotification, titleRefreshNotification, moveRefreshNotification] {
             CFNotificationCenterAddObserver(
                 CFNotificationCenterGetDarwinNotifyCenter(),
                 Unmanaged.passUnretained(self).toOpaque(),
@@ -116,7 +121,11 @@ class YabaiService: ObservableObject {
                     let generation = service.refreshGeneration
                     DispatchQueue.main.async { [weak service] in
                         guard let service, service.isStarted, generation == service.refreshGeneration else { return }
-                        service.refresh(notification == service.titleRefreshNotification ? .windows : .full)
+                        if notification == service.moveRefreshNotification {
+                            service.scheduleMoveRefresh()
+                        } else {
+                            service.refresh(notification == service.titleRefreshNotification ? .windows : .full)
+                        }
                     }
                 },
                 notification as CFString, nil, .deliverImmediately)
@@ -134,13 +143,14 @@ class YabaiService: ObservableObject {
     func stop() {
         guard isStarted else { return }
         isStarted = false
-        for notification in [refreshNotification, titleRefreshNotification] {
+        for notification in [refreshNotification, titleRefreshNotification, moveRefreshNotification] {
             CFNotificationCenterRemoveObserver(
                 CFNotificationCenterGetDarwinNotifyCenter(),
                 Unmanaged.passUnretained(self).toOpaque(),
                 CFNotificationName(notification as CFString), nil)
         }
         refreshGeneration += 1
+        cancelMoveRefresh()
         refreshTask?.cancel()
         refreshTask = nil
         signalTask?.cancel()
@@ -191,7 +201,12 @@ class YabaiService: ObservableObject {
     
     /// Darwin notifications avoid an AppleScript process and watchdog per window event.
     private func signalAction(for event: String) -> String {
-        let notification = event == "window_title_changed" ? titleRefreshNotification : refreshNotification
+        let notification: String
+        switch event {
+        case "window_title_changed": notification = titleRefreshNotification
+        case "window_moved": notification = moveRefreshNotification
+        default: notification = refreshNotification
+        }
         return "/usr/bin/notifyutil -p \(notification)"
     }
 
@@ -243,8 +258,29 @@ class YabaiService: ObservableObject {
         if scope == .full || pendingRefresh == nil { pendingRefresh = scope }
     }
 
+    /// AX move delivery can be 140-290ms apart during a drag. Wait 300ms for the final relationships.
+    private func scheduleMoveRefresh() {
+        guard isStarted else { return }
+        cancelMoveRefresh()
+        let generation = refreshGeneration
+        moveRefreshTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 300_000_000)
+            } catch { return }
+            guard let self, self.isStarted, generation == self.refreshGeneration, !Task.isCancelled else { return }
+            self.moveRefreshTask = nil
+            self.refresh(.full)
+        }
+    }
+
+    private func cancelMoveRefresh() {
+        moveRefreshTask?.cancel()
+        moveRefreshTask = nil
+    }
+
     private func refresh(_ requestedScope: RefreshScope) {
         guard isStarted else { return }
+        if requestedScope == .full { cancelMoveRefresh() }
         enqueueRefresh(requestedScope)
         guard refreshTask == nil else { return }
         let generation = refreshGeneration
@@ -253,6 +289,8 @@ class YabaiService: ObservableObject {
                 guard isStarted, generation == refreshGeneration, !Task.isCancelled else { return }
                 pendingRefresh = nil
                 let scope: RefreshScope = hasFullSnapshot ? requested : .full
+                // A structural event or title fallback supersedes any delayed move snapshot.
+                if scope == .full { cancelMoveRefresh() }
                 let path = yabaiPath
                 do {
                     var next: YabaiState
