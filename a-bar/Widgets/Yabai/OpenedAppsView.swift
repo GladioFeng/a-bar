@@ -38,10 +38,9 @@ struct OpenedAppsView: View, Equatable {
         if spacesSettings.hideDuplicateApps {
             filtered = WindowFilter.deduplicatedByApp(filtered, appName: \.app)
         }
-        // Order down a stack first, then left to right
-        return WindowFilter.orderedByStackThenPosition(
-            filtered, stackIndex: \.stackIndex, x: \.frame.x
-        ).map(YabaiWindowPresentation.init)
+        // Keep icon positions stable without changing which duplicate window they represent.
+        return filtered.sorted { ($0.app, $0.id) < ($1.app, $1.id) }
+            .map(YabaiWindowPresentation.init)
     }
 }
 

@@ -230,6 +230,70 @@ final class YabaiStateTests: XCTestCase {
 
   // MARK: - One icon per app
 
+  func testSpaceIconOrderSurvivesDraggingPastAnotherWindow() {
+    let target = space(id: 1, index: 1)
+    let before = YabaiState(windows: [
+      window(id: 10, app: "kitty", x: 100),
+      window(id: 20, app: "Codex", x: 500),
+    ])
+    let after = YabaiState(windows: [
+      window(id: 20, app: "Codex", x: 500),
+      window(id: 10, app: "kitty", x: 900),
+    ])
+
+    let original = OpenedAppsView.windows(for: target, state: before, settings: .init())
+    let moved = OpenedAppsView.windows(for: target, state: after, settings: .init())
+    XCTAssertEqual(original.map(\.id), [20, 10])
+    XCTAssertEqual(moved, original, "geometry and query order must not reorder Space icons")
+  }
+
+  func testSpaceAppOrderingPreservesTheDuplicateRepresentative() {
+    let target = space(id: 1, index: 1)
+    let windows = [
+      window(id: 30, app: "Safari", title: "Current", x: 100, focused: true),
+      window(id: 20, app: "kitty", x: 500),
+      window(id: 10, app: "Safari", title: "Other", x: 900, focused: false),
+    ]
+    for (snapshot, expectedID, expectedFocus, expectedTitle) in [
+      (windows, 30, true, "Current"), (Array(windows.reversed()), 10, false, "Other"),
+    ] {
+      let state = YabaiState(windows: snapshot)
+      let icons = OpenedAppsView.windows(for: target, state: state, settings: .init())
+      XCTAssertEqual(icons.map(\.id), [expectedID, 20])
+      XCTAssertEqual(icons.map(\.app), ["Safari", "kitty"])
+      XCTAssertEqual(icons.first?.hasFocus, expectedFocus)
+      XCTAssertEqual(icons.first?.title, expectedTitle)
+      var settings = SpacesWidgetSettings()
+      settings.hideDuplicateApps = false
+      XCTAssertEqual(OpenedAppsView.windows(for: target, state: state, settings: settings).map(\.id), [10, 30, 20])
+    }
+  }
+
+  func testSpaceIconsStillFollowWindowMembershipChanges() {
+    let target = space(id: 1, index: 1)
+    let before = YabaiState(windows: [window(id: 10, app: "kitty"), window(id: 20, app: "Codex", space: 2)])
+    let movedAndOpened = YabaiState(windows: [
+      window(id: 30, app: "Safari"), window(id: 10, app: "kitty", space: 2), window(id: 20, app: "Codex"),
+    ])
+    let closed = YabaiState(windows: [window(id: 30, app: "Safari")])
+
+    XCTAssertEqual(OpenedAppsView.windows(for: target, state: before, settings: .init()).map(\.id), [10])
+    XCTAssertEqual(OpenedAppsView.windows(for: target, state: movedAndOpened, settings: .init()).map(\.id), [20, 30])
+    XCTAssertEqual(OpenedAppsView.windows(for: target, state: closed, settings: .init()).map(\.id), [30])
+  }
+
+  func testSpaceIconsApplyExclusionsBeforeChoosingADuplicate() {
+    var settings = SpacesWidgetSettings()
+    settings.exclusions = "Finder"
+    settings.titleExclusions = "Private"
+    let snapshot = YabaiState(windows: [
+      window(id: 10, app: "Safari", title: "Private"), window(id: 20, app: "Safari", title: "Work"),
+      window(id: 30, app: "Finder"), window(id: 40, app: "Music", sticky: true),
+      window(id: 50, app: "Mail", minimized: true), window(id: 60, app: "Notes", hidden: true),
+    ])
+    XCTAssertEqual(OpenedAppsView.windows(for: space(id: 1, index: 1), state: snapshot, settings: settings).map(\.id), [20])
+  }
+
   func testRepeatedAppsAreShownOnceInTheOrderTheyFirstAppear() {
     let apps = state().uniqueApps(forSpace: 1)
 
