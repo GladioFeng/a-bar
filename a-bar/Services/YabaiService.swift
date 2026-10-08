@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import Darwin
 import notify
+import ApplicationServices
 
 /// Service for interacting with yabai window manager
 class YabaiService: ObservableObject {
@@ -26,6 +27,18 @@ class YabaiService: ObservableObject {
         ("window_moved", "abar-window-moved"),
     ]
     private let settingsManager: SettingsManager
+    private let windowEvents: YabaiWindowEvents?
+    private let workspaceNotifications: NotificationCenter
+    private let screenNotifications: NotificationCenter
+    private var requestedAccessibility = false
+    private struct NativeTitle {
+        let pid: Int
+        let element: AXUIElement
+        var title: String
+        var revision: Int
+    }
+    private var nativeTitles: [Int: NativeTitle] = [:]
+    private var nativeTitleRevision = 0
     private enum RefreshScope: Equatable { case focus(Int?), windows, full }
     private var focusToken: Int32 = -1
     // Native calls are injectable so token zero and registration failure are testable.
@@ -64,12 +77,18 @@ class YabaiService: ObservableObject {
     init(
         settingsManager: SettingsManager = .shared,
         refreshNotification: String = "user.uid.\(getuid()).com.jeantinland.a-bar.yabai",
+        windowEvents: YabaiWindowEvents? = YabaiWindowEvents(),
+        workspaceNotifications: NotificationCenter = NSWorkspace.shared.notificationCenter,
+        screenNotifications: NotificationCenter = .default,
         frontmostPID: @escaping () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier },
         registerFocus: @escaping (String, inout Int32) -> UInt32 = { notify_register_check($0, &$1) },
         readFocus: @escaping (Int32, inout UInt64) -> UInt32 = { notify_get_state($0, &$1) },
         cancelFocus: @escaping (Int32) -> UInt32 = { notify_cancel($0) }
     ) {
         self.settingsManager = settingsManager
+        self.windowEvents = windowEvents
+        self.workspaceNotifications = workspaceNotifications
+        self.screenNotifications = screenNotifications
         self.refreshNotification = refreshNotification
         self.frontmostPID = frontmostPID
         self.registerFocus = registerFocus
@@ -80,7 +99,7 @@ class YabaiService: ObservableObject {
     private func setupObservers() {
         let generation = refreshGeneration
         // Observe macOS Space changes
-        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+        spaceObserver = workspaceNotifications.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil,
             queue: .main
@@ -90,7 +109,7 @@ class YabaiService: ObservableObject {
         }
 
         // Observe app activation/deactivation/launch/termination/hide/unhide
-        let nc = NSWorkspace.shared.notificationCenter
+        let nc = workspaceNotifications
         let notifications: [NSNotification.Name] = [
             NSWorkspace.didActivateApplicationNotification,
             NSWorkspace.didLaunchApplicationNotification,
@@ -111,7 +130,7 @@ class YabaiService: ObservableObject {
         }
 
         // Observe display add/removal/reconfiguration
-        screenObserver = NotificationCenter.default.addObserver(
+        screenObserver = screenNotifications.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
             queue: .main
@@ -176,6 +195,23 @@ class YabaiService: ObservableObject {
                 notification as CFString, nil, .deliverImmediately)
         }
         isStarted = true
+        let generation = refreshGeneration
+        windowEvents?.start { [weak self] event in
+            guard let self, self.isStarted, generation == self.refreshGeneration else { return }
+            switch event {
+            case .moved: self.scheduleMoveRefresh()
+            case .titleChanged(let id, let pid, let element, let title):
+                self.applyNativeTitle(id: id, pid: pid, element: element, title: title)
+            case .resynchronized: self.refresh()
+            case .permissionLost:
+                self.nativeTitles.removeAll()
+                self.refresh()
+            }
+        }
+        if windowEvents?.isTrusted == false, !requestedAccessibility {
+            requestedAccessibility = true
+            requestWindowObservationAccess()
+        }
         hasFullSnapshot = false
         signalPath = yabaiPath
         setupObservers()
@@ -188,6 +224,8 @@ class YabaiService: ObservableObject {
     func stop() {
         guard isStarted else { return }
         isStarted = false
+        windowEvents?.stop()
+        nativeTitles.removeAll()
         if focusToken >= 0 { _ = cancelFocus(focusToken); focusToken = -1 }
         lastActivatedPID = nil
         for notification in [refreshNotification, titleRefreshNotification, moveRefreshNotification, focusRefreshNotification] {
@@ -204,17 +242,17 @@ class YabaiService: ObservableObject {
         pendingRefresh = nil
         hasFullSnapshot = false
         if let observer = spaceObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            workspaceNotifications.removeObserver(observer)
             spaceObserver = nil
         }
-        let nc = NSWorkspace.shared.notificationCenter
+        let nc = workspaceNotifications
         for observer in appObservers {
             nc.removeObserver(observer)
         }
         appObservers.removeAll()
 
         if let observer = screenObserver {
-            NotificationCenter.default.removeObserver(observer)
+            screenNotifications.removeObserver(observer)
             screenObserver = nil
         }
         
@@ -237,7 +275,13 @@ class YabaiService: ObservableObject {
         signalTimer = Timer.scheduledTimer(withTimeInterval: 20.0, repeats: true) { [weak self] _ in
             guard let self, self.isStarted, generation == self.refreshGeneration else { return }
             self.setupYabaiSignals()
+            self.windowEvents?.update(self.state.windows)
         }
+    }
+
+    func requestWindowObservationAccess() {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
     }
     
     /// Stop the periodic signal timer
@@ -281,7 +325,14 @@ class YabaiService: ObservableObject {
                 let signals = try JSONDecoder().decode([YabaiSignal].self, from: Data(output.utf8))
                 for (event, label) in Self.signalEvents {
                     guard isStarted, generation == refreshGeneration, !Task.isCancelled else { return }
-                    // Keep the labels while migrating old AppleScript and full-refresh title actions.
+                    // Retire high-rate shell notifications when upgrading an existing installation.
+                    if event == "window_moved" ||
+                        (event == "window_title_changed" && windowEvents?.supportsTitles != false) {
+                        if signals.contains(where: { $0.label == label }) {
+                            try await ShellExecutor.run(executable: path, arguments: ["-m", "signal", "--remove", label])
+                        }
+                        continue
+                    }
                     let action = signalAction(for: event)
                     if signals.contains(where: { $0.label == label && $0.event == event && $0.action == action }) { continue }
                     try await ShellExecutor.run(executable: path, arguments: [
@@ -348,8 +399,10 @@ class YabaiService: ObservableObject {
                 if scope == .full { cancelMoveRefresh() }
                 let path = yabaiPath
                 let revision = requestRevision
+                let titleRevision = nativeTitleRevision
                 do {
                     var next: YabaiState
+                    var queriedFocusWindowID: Int?
                     switch scope {
                     case .focus(let id):
                         let window: YabaiWindow = try await fetch("windows", path: path,
@@ -362,6 +415,7 @@ class YabaiService: ObservableObject {
                             enqueueRefresh(.full)
                             continue
                         }
+                        queriedFocusWindowID = window.id
                         next = patched
                     case .full:
                         async let spaces: [YabaiSpace] = fetch("spaces", path: path)
@@ -384,9 +438,17 @@ class YabaiService: ObservableObject {
                         next = state
                         next.windows = windows
                     }
+                    guard let reconciled = await reconcileNativeTitles(next, startedAt: titleRevision,
+                        freshWindowID: queriedFocusWindowID, pruneMissing: scope == .full, generation: generation) else { return }
+                    next = reconciled
+                    if case .focus = scope, revision != requestRevision { continue }
+                    if scope == .windows, pendingRefresh == .full { continue }
                     // A stopped service must not overwrite a newer generation's state or flags.
                     guard isStarted, generation == refreshGeneration, !Task.isCancelled else { return }
-                    if scope == .full { hasFullSnapshot = true }
+                    if scope == .full {
+                        hasFullSnapshot = true
+                        windowEvents?.update(next.windows)
+                    }
                     if state != next { state = next }
                     if !isConnected { isConnected = true }
                     if lastError != nil { lastError = nil }
@@ -402,6 +464,64 @@ class YabaiService: ObservableObject {
             }
             refreshTask = nil
         }
+    }
+
+    private func applyNativeTitle(id: Int, pid: pid_t, element: AXUIElement, title: String?) {
+        guard id > 0, id <= Int(UInt32.max), pid > 0 else { return }
+        let matches = state.windows.indices.filter { state.windows[$0].id == id }
+        guard matches.count <= 1,
+              matches.first.map({ state.windows[$0].pid == Int(pid) }) ?? true else { return }
+        guard let title else {
+            nativeTitles.removeValue(forKey: id)
+            refresh(.windows)
+            return
+        }
+        nativeTitleRevision += 1
+        nativeTitles[id] = NativeTitle(pid: Int(pid), element: element, title: title, revision: nativeTitleRevision)
+        guard let index = matches.first else { refresh(); return }
+        var next = state
+        next.windows[index] = next.windows[index].replacingTitle(title)
+        if state != next { state = next }
+    }
+
+    /// AX and yabai receive title events independently. Keep an in-flight old snapshot
+    /// from undoing a native title, but re-read conflicts so a lost AX event cannot pin stale text.
+    @MainActor
+    private func reconcileNativeTitles(_ snapshot: YabaiState, startedAt revision: Int,
+                                       freshWindowID: Int?, pruneMissing: Bool, generation: Int) async -> YabaiState? {
+        var next = snapshot
+        // A focus patch contains cached siblings; only the queried window can acknowledge its title.
+        for window in snapshot.windows where freshWindowID == nil || window.id == freshWindowID {
+            guard let old = nativeTitles[window.id], old.pid == window.pid else { continue }
+            if old.title == window.title {
+                nativeTitles.removeValue(forKey: window.id)
+                continue
+            }
+            let confirmed = await windowEvents?.readTitle(old.element)
+            guard isStarted, generation == refreshGeneration, !Task.isCancelled else { return nil }
+            guard var current = nativeTitles[window.id], current.revision == old.revision else { continue }
+            guard let confirmed else { nativeTitles.removeValue(forKey: window.id); continue }
+            if current.title != confirmed {
+                nativeTitleRevision += 1
+                current.title = confirmed
+                current.revision = nativeTitleRevision
+                nativeTitles[window.id] = current
+            }
+            if confirmed == window.title { nativeTitles.removeValue(forKey: window.id) }
+        }
+        // A later native callback may arrive while another window's AX read is suspended.
+        for index in next.windows.indices {
+            let window = next.windows[index]
+            if let title = nativeTitles[window.id], title.pid == window.pid {
+                next.windows[index] = window.replacingTitle(title.title)
+            }
+        }
+        if pruneMissing {
+            nativeTitles = nativeTitles.filter { id, title in
+                title.revision > revision || next.windows.contains { $0.id == id && $0.pid == title.pid }
+            }
+        }
+        return next
     }
 
     private func filteredWindows(_ windows: [YabaiWindow]) -> [YabaiWindow] {

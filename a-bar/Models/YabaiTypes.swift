@@ -68,7 +68,7 @@ struct YabaiWindow: Codable, Identifiable, Equatable {
     let id: Int
     let pid: Int
     let app: String
-    let title: String
+    private(set) var title: String
     let scratchpad: String?
     let frame: WindowFrame
     let role: String?
@@ -149,6 +149,12 @@ struct YabaiWindow: Codable, Identifiable, Equatable {
         case _isGrabbed = "is-grabbed"
     }
     
+    func replacingTitle(_ title: String) -> YabaiWindow {
+        var window = self
+        window.title = title
+        return window
+    }
+
     fileprivate mutating func setFocus(_ focused: Bool) { _hasFocus = focused }
 
     /// Window frame/dimensions

@@ -3,6 +3,7 @@ import Combine
 import SwiftUI
 import XCTest
 import Darwin
+import ApplicationServices
 
 /// Window and Space events arrive in bursts, and each one used to start its own overlapping
 /// set of yabai queries. A burst has to collapse into one active batch plus a single
@@ -21,6 +22,7 @@ final class YabaiServiceTests: XCTestCase {
     private var observations = Set<AnyCancellable>()
     private var activeServiceDirectory: URL?
     private var expectedRemovals: [URL: Int] = [:]
+    private let notifications = NotificationCenter()
 
     override func setUpWithError() throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("abar-refresh-\(UUID())")
@@ -70,7 +72,7 @@ final class YabaiServiceTests: XCTestCase {
         notificationName = "user.uid.\(getuid()).a-bar-test.\(UUID())"
         service = YabaiService(
             settingsManager: manager,
-            refreshNotification: notificationName, frontmostPID: { 123 })
+            refreshNotification: notificationName, windowEvents: nil, workspaceNotifications: notifications, screenNotifications: notifications, frontmostPID: { 123 })
     }
 
     override func tearDownWithError() throws {
@@ -110,11 +112,16 @@ final class YabaiServiceTests: XCTestCase {
         }
     }
 
+    private func expectSignalCleanup(at root: URL) {
+        let completed = log("completed", at: root).filter { $0.hasPrefix("-m signal --remove ") }.count
+        expectedRemovals[root] = max(expectedRemovals[root, default: 0], completed) + 7
+    }
+
     private func startService() {
         let root = URL(fileURLWithPath: manager.settings.global.yabaiPath)
             .deletingLastPathComponent().standardizedFileURL
         if let previous = activeServiceDirectory, previous != root {
-            expectedRemovals[previous, default: 0] += 7
+            expectSignalCleanup(at: previous)
         }
         activeServiceDirectory = root
         service.start()
@@ -122,7 +129,7 @@ final class YabaiServiceTests: XCTestCase {
 
     private func stopService() {
         if let root = activeServiceDirectory {
-            expectedRemovals[root, default: 0] += 7
+            expectSignalCleanup(at: root)
             activeServiceDirectory = nil
         }
         service.stop()
@@ -169,12 +176,7 @@ final class YabaiServiceTests: XCTestCase {
     }
 
     private func registeredMoveNotification() throws -> String {
-        let action = try XCTUnwrap(arguments.first {
-            $0.hasPrefix("-m signal --add event=window_moved ")
-        })
-        let notification = action.components(separatedBy: "action=/usr/bin/notifyutil -p ")
-            .last?.components(separatedBy: " label=").first
-        return try XCTUnwrap(notification)
+        notificationName + ".window-moved"
     }
 
     private func postNotification(_ name: String) {
@@ -570,7 +572,7 @@ final class YabaiServiceTests: XCTestCase {
         await waitFor { service.isConnected && service.signalsRegistered }
         XCTAssertEqual(queries.count, 3)
         try write("calls", "")
-        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        notifications.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
         await waitFor { queries.count >= 3 }
         try await Task.sleep(nanoseconds: 150_000_000)
         XCTAssertEqual(queries.count, 3)
@@ -849,7 +851,7 @@ final class YabaiServiceTests: XCTestCase {
     @MainActor
     func testDuplicateActivationDoesNotQueryButDifferentAppDoes() async throws {
         var pid: pid_t = 123
-        service = YabaiService(settingsManager: manager, refreshNotification: notificationName, frontmostPID: { pid })
+        service = YabaiService(settingsManager: manager, refreshNotification: notificationName, windowEvents: nil, workspaceNotifications: notifications, screenNotifications: notifications, frontmostPID: { pid })
         var windows = try readFixture("--windows.json")
         var second = windows[0]
         second["id"] = 11
@@ -947,7 +949,7 @@ final class YabaiServiceTests: XCTestCase {
     func testZeroTokenIsReadAndCancelledAndRegistrationFailureUsesFullChannel() async throws {
         var cancelled: [Int32] = []
         var reads: [Int32] = []
-        service = YabaiService(settingsManager: manager, refreshNotification: notificationName,
+        service = YabaiService(settingsManager: manager, refreshNotification: notificationName, windowEvents: nil, workspaceNotifications: notifications, screenNotifications: notifications,
             frontmostPID: { 123 }, registerFocus: { _, token in token = 0; return 0 },
             readFocus: { token, value in reads.append(token); value = 10; return 0 },
             cancelFocus: { token in cancelled.append(token); return 0 })
@@ -958,7 +960,7 @@ final class YabaiServiceTests: XCTestCase {
         await waitFor { queries.count == 1 && reads == [0] }
         await stopAndWait()
         XCTAssertEqual(cancelled, [0])
-        service = YabaiService(settingsManager: manager, refreshNotification: notificationName,
+        service = YabaiService(settingsManager: manager, refreshNotification: notificationName, windowEvents: nil, workspaceNotifications: notifications, screenNotifications: notifications,
             frontmostPID: { 123 }, registerFocus: { _, _ in 1 },
             cancelFocus: { token in cancelled.append(token); return 0 })
         try write("arguments", "")
@@ -995,6 +997,150 @@ final class YabaiServiceTests: XCTestCase {
         XCTAssertNil(fallback.selectingVisibleWindow(for: 999).focusedWindow)
     }
 
+    private func stampNativeReadySnapshot(_ backend: YabaiWindowEventsTests.Backend) throws {
+        var spaces = try readFixture("--spaces.json")
+        spaces[0]["label"] = "Native observers ready"
+        let data = try JSONSerialization.data(withJSONObject: spaces)
+        let path = directory.appendingPathComponent("--spaces.json")
+        // Stamp only after subscription, so the matching published snapshot proves startup recovery finished.
+        backend.onFirstSubscription { try? data.write(to: path, options: .atomic) }
+    }
+
+    @MainActor
+    func testNativeTitleWinsWhenYabaiCacheHasNotReceivedTheEventYet() async throws {
+        let backend = YabaiWindowEventsTests.Backend(title: "Native title")
+        try stampNativeReadySnapshot(backend)
+        let native = YabaiWindowEvents(trusted: { true }, subscribe: backend.subscribe,
+                                       titleReader: { _ in backend.title })
+        service = YabaiService(settingsManager: manager, refreshNotification: notificationName,
+                               windowEvents: native, workspaceNotifications: notifications, screenNotifications: notifications, frontmostPID: { 123 })
+        startService()
+        await waitFor { service.state.focusedSpace?.label == "Native observers ready" && service.signalsRegistered && backend.registered == [123] }
+        backend.emit(.titleChanged(id: 10, pid: 123, element: AXUIElementCreateApplication(123), title: "Native title"))
+        await waitFor { service.state.focusedWindow?.title == "Native title" }
+        // The backend receives its own AX event later; it does not send another event to a-bar.
+        var windows = try readFixture("--windows.json")
+        windows[0]["title"] = "Native title"
+        try writeFixture("--windows.json", windows)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(service.state.focusedWindow?.title, "Native title")
+        await stopAndWait()
+    }
+
+    @MainActor
+    func testNativePermissionRecoveryRebuildsTheMissedSnapshot() async throws {
+        let backend = YabaiWindowEventsTests.Backend()
+        try stampNativeReadySnapshot(backend)
+        var trusted = true
+        let native = YabaiWindowEvents(trusted: { trusted }, subscribe: backend.subscribe)
+        service = YabaiService(settingsManager: manager, refreshNotification: notificationName,
+                               windowEvents: native, workspaceNotifications: notifications, screenNotifications: notifications, frontmostPID: { 123 })
+        startService()
+        await waitFor { service.state.focusedSpace?.label == "Native observers ready" && service.signalsRegistered && backend.registered == [123] }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        trusted = false
+        native.update(service.state.windows)
+        await waitFor { backend.cancelled == [123] }
+        var spaces = try readFixture("--spaces.json")
+        spaces[0]["label"] = "Changed during permission gap"
+        try writeFixture("--spaces.json", spaces)
+        trusted = true
+        native.update(service.state.windows)
+        await waitFor { service.state.focusedSpace?.label == "Changed during permission gap" }
+        await stopAndWait()
+    }
+
+    @MainActor
+    func testNativeTitleOnlyPatchesExactWindowAndCannotPinFailedReadOverNewBackendTitle() async throws {
+        var windows = try readFixture("--windows.json")
+        var second = windows[0]
+        second["id"] = 11
+        second["has-focus"] = false
+        windows.append(second) // Same PID, title and geometry deliberately cannot identify the target.
+        try writeFixture("--windows.json", windows)
+        let backend = YabaiWindowEventsTests.Backend(title: "Native B")
+        try stampNativeReadySnapshot(backend)
+        let native = YabaiWindowEvents(trusted: { true }, subscribe: backend.subscribe,
+                                       titleReader: { _ in backend.title })
+        service = YabaiService(settingsManager: manager, refreshNotification: notificationName,
+                               windowEvents: native, workspaceNotifications: notifications, screenNotifications: notifications, frontmostPID: { 123 })
+        startService()
+        await waitFor { service.state.focusedSpace?.label == "Native observers ready" && service.signalsRegistered && backend.registered == [123] }
+        backend.emit(.titleChanged(id: 11, pid: 123, element: AXUIElementCreateApplication(123), title: "Native B"))
+        await waitFor { service.state.windows.first(where: { $0.id == 11 })?.title == "Native B" }
+        XCTAssertEqual(service.state.windows.first(where: { $0.id == 10 })?.title, "Example")
+        var focused = windows[0]
+        focused["title"] = "Focus read complete"
+        try writeSingleWindow(focused)
+        try await postFocus(10)
+        await waitFor { service.state.focusedWindow?.title == "Focus read complete" }
+        var spaces = try readFixture("--spaces.json")
+        spaces[0]["label"] = "Stale backend confirmed"
+        try writeFixture("--spaces.json", spaces)
+        service.refresh()
+        await waitFor { service.state.focusedSpace?.label == "Stale backend confirmed" }
+        XCTAssertEqual(service.state.windows.first(where: { $0.id == 11 })?.title, "Native B")
+        backend.title = nil
+        windows[1]["title"] = "Backend C"
+        try writeFixture("--windows.json", windows)
+        service.refresh()
+        await waitFor { service.state.windows.first(where: { $0.id == 11 })?.title == "Backend C" }
+        await stopAndWait()
+    }
+
+    @MainActor
+    func testLateTitleConfirmationCannotOverwriteNewNativeTitle() async throws {
+        let backend = YabaiWindowEventsTests.Backend()
+        try stampNativeReadySnapshot(backend)
+        let element = AXUIElementCreateApplication(123)
+        var sentNewer = false
+        let native = YabaiWindowEvents(trusted: { true }, subscribe: backend.subscribe,
+            titleReader: { _ in
+                if !sentNewer {
+                    sentNewer = true
+                    backend.emitInline(.titleChanged(id: 10, pid: 123, element: element, title: "Native C"))
+                    DispatchQueue.main.sync {} // Deliver C before the older read returns B.
+                    return "Native B"
+                }
+                return "Native C"
+            })
+        service = YabaiService(settingsManager: manager, refreshNotification: notificationName,
+                               windowEvents: native, workspaceNotifications: notifications, screenNotifications: notifications, frontmostPID: { 123 })
+        startService()
+        await waitFor { service.state.focusedSpace?.label == "Native observers ready" && service.signalsRegistered && backend.registered == [123] }
+        backend.emit(.titleChanged(id: 10, pid: 123, element: element, title: "Native B"))
+        await waitFor { service.state.focusedWindow?.title == "Native B" || service.state.focusedWindow?.title == "Native C" }
+        var spaces = try readFixture("--spaces.json")
+        spaces[0]["label"] = "Confirmation completed"
+        try writeFixture("--spaces.json", spaces)
+        service.refresh()
+        await waitFor { service.state.focusedSpace?.label == "Confirmation completed" }
+        XCTAssertEqual(service.state.focusedWindow?.title, "Native C")
+        await stopAndWait()
+    }
+
+    @MainActor
+    func testSuccessfulTitleConfirmationDoesNotSuppressReturnToPreviousTitle() async throws {
+        let backend = YabaiWindowEventsTests.Backend(title: "Native B")
+        try stampNativeReadySnapshot(backend)
+        let native = YabaiWindowEvents(trusted: { true }, subscribe: backend.subscribe,
+                                       titleReader: { _ in backend.title })
+        service = YabaiService(settingsManager: manager, refreshNotification: notificationName,
+                               windowEvents: native, workspaceNotifications: notifications, screenNotifications: notifications, frontmostPID: { 123 })
+        startService()
+        await waitFor { service.state.focusedSpace?.label == "Native observers ready" && service.signalsRegistered && backend.registered == [123] }
+        let element = AXUIElementCreateApplication(123)
+        backend.emit(.titleChanged(id: 10, pid: 123, element: element, title: "Native B"))
+        await waitFor { service.state.focusedWindow?.title == "Native B" }
+        backend.title = "Native C"
+        service.refresh()
+        await waitFor { service.state.focusedWindow?.title == "Native C" }
+        backend.title = "Native B"
+        backend.emit(.titleChanged(id: 10, pid: 123, element: element, title: "Native B"))
+        await waitFor { service.state.focusedWindow?.title == "Native B" }
+        await stopAndWait()
+    }
+
     private var focusAction: String {
         let name = notificationName! + ".window-focused"
         return "/usr/bin/notifyutil -z 0 -s \(name) \"$YABAI_WINDOW_ID\" -p \(name)"
@@ -1003,7 +1149,6 @@ final class YabaiServiceTests: XCTestCase {
     @MainActor
     func testSignalMigrationChecksEventAndActionAndKeepsLabels() async throws {
         let fullAction = "/usr/bin/notifyutil -p \(notificationName!)"
-        let titleAction = fullAction + ".window-title-changed"
         try writeFixture("signals.json", [
             ["index": 0, "label": "abar-window-destroyed", "event": "window_destroyed", "app": "", "title": "", "action": fullAction],
             ["index": 1, "label": "abar-window-title-changed", "event": "window_title_changed", "app": "", "title": "", "action": fullAction],
@@ -1012,10 +1157,10 @@ final class YabaiServiceTests: XCTestCase {
         startService()
         await waitFor { service.isConnected && service.signalsRegistered }
         let adds = arguments.filter { $0.hasPrefix("-m signal --add ") }
-        XCTAssertEqual(adds.count, 6, "keep the destroyed signal and register the other six")
-        XCTAssertTrue(adds.contains("-m signal --add event=window_title_changed action=\(titleAction) label=abar-window-title-changed"))
+        XCTAssertEqual(adds.count, 4, "keep destroyed, migrate focus and add three structural signals")
+        XCTAssertTrue(arguments.contains("-m signal --remove abar-window-title-changed"))
         XCTAssertTrue(adds.contains("-m signal --add event=window_focused action=\(focusAction) label=abar-window-focused"))
-        XCTAssertTrue(adds.contains("-m signal --add event=window_moved action=\(fullAction).window-moved label=abar-window-moved"))
+        XCTAssertFalse(adds.contains { $0.contains("event=window_moved ") || $0.contains("event=window_title_changed ") })
         await stopAndWait()
     }
 
@@ -1038,7 +1183,7 @@ final class YabaiServiceTests: XCTestCase {
     }
 
     @MainActor
-    func testLegacyMoveSignalMigratesWithoutReRegisteringOtherSignals() async throws {
+    func testLegacyMoveAndTitleSignalsAreRemovedWithoutReRegisteringOtherSignals() async throws {
         let action = "/usr/bin/notifyutil -p \(notificationName!)"
         try writeFixture("signals.json", [
             ["index": 4, "label": "abar-window-created", "event": "window_created", "app": "", "title": "", "action": action],
@@ -1051,9 +1196,9 @@ final class YabaiServiceTests: XCTestCase {
         ])
         startService()
         await waitFor { service.isConnected && service.signalsRegistered }
-        XCTAssertEqual(arguments.filter { $0.hasPrefix("-m signal --add ") }, [
-            "-m signal --add event=window_moved action=\(action).window-moved label=abar-window-moved"
-        ])
+        XCTAssertFalse(arguments.contains { $0.hasPrefix("-m signal --add ") })
+        XCTAssertTrue(arguments.contains("-m signal --remove abar-window-moved"))
+        XCTAssertTrue(arguments.contains("-m signal --remove abar-window-title-changed"))
         await stopAndWait()
     }
 
