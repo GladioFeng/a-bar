@@ -64,6 +64,8 @@ class SystemInfoService: ObservableObject {
     private let settingsManager: SettingsManager
     private let readingQueue: DispatchQueue
     private let onRead: (WidgetRefreshSchedule.Reading) -> Void
+    private let keyboardNotifications: NotificationCenter
+    private let workspaceNotifications: NotificationCenter
 
     /// An interface that re-attaches counts from zero again, so the whole new reading is this
     /// interval's traffic.
@@ -123,7 +125,9 @@ class SystemInfoService: ObservableObject {
         onRead: @escaping (WidgetRefreshSchedule.Reading) -> Void = { _ in },
         makePowerSource: @escaping PowerSourceFactory = { callback, context in
             IOPSNotificationCreateRunLoopSource(callback, context)?.takeRetainedValue()
-        }
+        },
+        keyboardNotifications: NotificationCenter = DistributedNotificationCenter.default(),
+        workspaceNotifications: NotificationCenter = NSWorkspace.shared.notificationCenter
     ) {
         self.settingsManager = settingsManager
         self.readingQueue = readingQueue
@@ -131,6 +135,8 @@ class SystemInfoService: ObservableObject {
         self.audioEvents = audioEvents
         self.eventAudioDevice = eventAudioDevice
         self.makePowerSource = makePowerSource
+        self.keyboardNotifications = keyboardNotifications
+        self.workspaceNotifications = workspaceNotifications
     }
 
     deinit {
@@ -1177,7 +1183,7 @@ class SystemInfoService: ObservableObject {
         let generation = version(of: reading)
         switch reading {
         case .keyboard:
-            keyboardObserver = DistributedNotificationCenter.default().addObserver(
+            keyboardObserver = keyboardNotifications.addObserver(
                 forName: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
                 object: nil, queue: .main
             ) { [weak self] _ in
@@ -1186,7 +1192,7 @@ class SystemInfoService: ObservableObject {
             }
             eventDrivenReadings.insert(.keyboard)
         case .storageVolumes:
-            let center = NSWorkspace.shared.notificationCenter
+            let center = workspaceNotifications
             storageObservers = [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification].map { name in
                 center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                     guard let self, self.isCurrent(.storageVolumes, generation) else { return }
@@ -1225,10 +1231,10 @@ class SystemInfoService: ObservableObject {
         eventDrivenReadings.remove(reading)
         switch reading {
         case .keyboard:
-            if let keyboardObserver { DistributedNotificationCenter.default().removeObserver(keyboardObserver) }
+            if let keyboardObserver { keyboardNotifications.removeObserver(keyboardObserver) }
             keyboardObserver = nil
         case .storageVolumes:
-            for observer in storageObservers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
+            for observer in storageObservers { workspaceNotifications.removeObserver(observer) }
             storageObservers.removeAll()
         case .battery:
             if let powerSource {

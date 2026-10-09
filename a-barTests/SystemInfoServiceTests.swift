@@ -450,17 +450,19 @@ final class SystemInfoServiceTests: XCTestCase {
 
     func testKeyboardAndMountObserversFollowDemandAndNoKeyboardTimerRemains() {
         let counts = ReadCounts()
+        // 私有通知中心隔离桌面事件，避免读次数受真实输入源切换干扰。
+        let keyboardNotifications = NotificationCenter()
+        let workspaceNotifications = NotificationCenter()
         manager.update { $0.widgets.keyboard.refreshInterval = 1 }
-        service = SystemInfoService(settingsManager: manager, onRead: counts.add)
+        service = SystemInfoService(settingsManager: manager, onRead: counts.add,
+            keyboardNotifications: keyboardNotifications, workspaceNotifications: workspaceNotifications)
         service.start(widgets: [.keyboard, .storage])
         settle(0.15)
         let firstKeyboard = counts.count(.keyboard)
         let firstStorage = counts.count(.storageVolumes)
         service.start(widgets: [.keyboard, .storage])
-        DistributedNotificationCenter.default().postNotificationName(
-            NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
-            object: nil, userInfo: nil, deliverImmediately: true)
-        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didMountNotification, object: nil)
+        keyboardNotifications.post(name: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String), object: nil)
+        workspaceNotifications.post(name: NSWorkspace.didMountNotification, object: nil)
         settle(0.2)
         XCTAssertEqual(counts.count(.keyboard), firstKeyboard + 1)
         XCTAssertEqual(counts.count(.storageVolumes), firstStorage + 1)
@@ -469,10 +471,8 @@ final class SystemInfoServiceTests: XCTestCase {
         XCTAssertEqual(counts.count(.keyboard), observed)
         service.stop()
         let stoppedStorage = counts.count(.storageVolumes)
-        DistributedNotificationCenter.default().postNotificationName(
-            NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
-            object: nil, userInfo: nil, deliverImmediately: true)
-        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didMountNotification, object: nil)
+        keyboardNotifications.post(name: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String), object: nil)
+        workspaceNotifications.post(name: NSWorkspace.didMountNotification, object: nil)
         settle(0.2)
         XCTAssertEqual(counts.count(.keyboard), observed)
         XCTAssertEqual(counts.count(.storageVolumes), stoppedStorage)

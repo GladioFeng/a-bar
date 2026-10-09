@@ -34,16 +34,14 @@ private struct ProcessContent: View, Equatable {
     @State private var focusedWindowPressed = false
     @State private var unfocusedWindowPressed: Set<Int> = []
     
-    private var processSettings: ProcessWidgetSettings {
-        settings.settings.widgets.process
-    }
-    
     private var theme: ABarTheme {
         ThemeManager.currentTheme(for: settings.settings.theme)
     }
     
     var body: some View {
         let globalSettings = settings.settings.global
+        // 显式捕获配置值，让窗口数据不变时列表也能响应设置更新。
+        let processSettings = settings.settings.widgets.process
         let userFont: Font = globalSettings.fontName.isEmpty ? .system(size: CGFloat(globalSettings.fontSize)) : .custom(globalSettings.fontName, size: CGFloat(globalSettings.fontSize))
         let userFontSmall: Font = globalSettings.fontName.isEmpty ? .system(size: CGFloat(Double(globalSettings.fontSize) * 0.9)) : .custom(globalSettings.fontName, size: CGFloat(Double(globalSettings.fontSize) * 0.9))
 
