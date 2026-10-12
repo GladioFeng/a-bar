@@ -37,6 +37,12 @@ final class YabaiServiceTests: XCTestCase {
           cat "$root/$3.json"
         elif [ "$3" = --list ]; then
           if [ -f "$root/signals.json" ]; then cat "$root/signals.json"; else printf '[]\\n'; fi
+        elif [ "$2" != signal ]; then
+          while [ -f "$root/hold-mutation" ]; do sleep 0.01; done
+          if [ -f "$root/fail-command" ] && [ "$(cat "$root/fail-command")" = "$2" ]; then
+            printf 'fixture mutation failed\\n' >&2
+            exit 1
+          fi
         fi
         """.write(to: executable, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
@@ -59,6 +65,7 @@ final class YabaiServiceTests: XCTestCase {
         observations.removeAll()
         manager.flush()
         try? FileManager.default.removeItem(at: directory.appendingPathComponent("hold"))
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent("hold-mutation"))
         // Tests that start observers explicitly stop them and await signal removal first.
         service = nil
         try FileManager.default.removeItem(at: directory)
@@ -106,8 +113,137 @@ final class YabaiServiceTests: XCTestCase {
 
     @MainActor
     private func stopAndWait() async {
+        let removals = calls.filter { $0 == "signal --remove" }.count
         service.stop()
-        await waitFor { calls.filter { $0 == "signal --remove" }.count == 3 }
+        await waitFor { calls.filter { $0 == "signal --remove" }.count == removals + 4 }
+    }
+
+    @MainActor
+    func testSuccessfulMutationsRefreshWithoutWorkspaceEvents() async throws {
+        try await startAndClearCalls()
+        let mutations: [() async -> Void] = [
+            { await self.service.goToSpace(1) },
+            { await self.service.renameSpace(1, label: "Renamed") },
+            { await self.service.createSpace(onDisplay: 1) },
+            { await self.service.removeSpace(1, onDisplay: 1) },
+            { await self.service.swapSpace(1, direction: .right) },
+            { await self.service.focusWindow(10) },
+        ]
+        for (index, mutate) in mutations.enumerated() {
+            var spaces = try readFixture("--spaces.json")
+            spaces[0]["label"] = "Result \(index)"
+            try writeFixture("--spaces.json", spaces)
+            await mutate()
+            await waitFor { service.state.spaces.first?.label == "Result \(index)" }
+        }
+        await stopAndWait()
+    }
+
+    @MainActor
+    func testFailedMutationAndDisplayFocusPreserveSnapshot() async throws {
+        try await startAndClearCalls()
+        let original = service.state
+        try write("fail-command", "space")
+        await service.renameSpace(1, label: "Failed")
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertNotNil(service.lastError)
+        XCTAssertEqual(service.state, original)
+        XCTAssertTrue(queries.isEmpty)
+        try write("fail-command", "display")
+        await service.createSpace(onDisplay: 1)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertTrue(queries.isEmpty)
+        XCTAssertFalse(arguments.contains("-m space --create"))
+        await stopAndWait()
+    }
+
+    @MainActor
+    func testOldMutationCannotRefreshOrReportFailureAfterRestart() async throws {
+        for fails in [false, true] {
+            try await startAndClearCalls()
+            try write("hold-mutation", "")
+            if fails { try write("fail-command", "space") }
+            let mutation = Task { await service.renameSpace(1, label: "Old") }
+            await waitFor { arguments.contains("-m space 1 --label Old") }
+            await stopAndWait()
+            var spaces = try readFixture("--spaces.json")
+            spaces[0]["label"] = "Restarted"
+            try writeFixture("--spaces.json", spaces)
+            service.start()
+            await waitFor { service.signalsRegistered && service.state.spaces.first?.label == "Restarted" }
+            let count = queries.count
+            try FileManager.default.removeItem(at: directory.appendingPathComponent("hold-mutation"))
+            await mutation.value
+            try await Task.sleep(nanoseconds: 100_000_000)
+            XCTAssertEqual(queries.count, count)
+            XCTAssertNil(service.lastError)
+            await stopAndWait()
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("fail-command"))
+            spaces[0]["label"] = "Original"
+            try writeFixture("--spaces.json", spaces)
+        }
+    }
+
+    @MainActor
+    func testStoppedMutationDoesNotQueueRefresh() async throws {
+        try await startAndClearCalls()
+        await stopAndWait()
+        await service.renameSpace(1, label: "Stopped")
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertTrue(queries.isEmpty)
+    }
+
+    @MainActor
+    func testMoveBurstRefreshesFinalSpaceRelationshipsOnce() async throws {
+        try await startAndClearCalls()
+        let name = notificationName + ".window-moved"
+        for _ in 0..<6 {
+            try await ShellExecutor.run(executable: "/usr/bin/notifyutil", arguments: ["-p", name])
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertTrue(queries.isEmpty)
+        var windows = try readFixture("--windows.json")
+        windows[0]["space"] = 2
+        windows[0]["display"] = 2
+        try writeFixture("--windows.json", windows)
+        var spaces = try readFixture("--spaces.json")
+        spaces[0]["windows"] = []
+        var destination = spaces[0]
+        destination["id"] = 2
+        destination["index"] = 2
+        destination["display"] = 2
+        destination["windows"] = [10]
+        try writeFixture("--spaces.json", spaces + [destination])
+        var displays = try readFixture("--displays.json")
+        displays[0]["spaces"] = [1]
+        var secondDisplay = displays[0]
+        secondDisplay["id"] = 2
+        secondDisplay["index"] = 2
+        secondDisplay["uuid"] = "second-display"
+        secondDisplay["spaces"] = [2]
+        try writeFixture("--displays.json", displays + [secondDisplay])
+        try await ShellExecutor.run(executable: "/usr/bin/notifyutil", arguments: ["-p", name])
+        await waitFor { service.state.windows.first?.display == 2 }
+        XCTAssertEqual(queries.count, 3)
+        XCTAssertEqual(service.state.spaces.last?.windows, [10])
+        XCTAssertEqual(service.state.displays.last?.spaces, [2])
+        await stopAndWait()
+    }
+
+    @MainActor
+    func testMoveDelayIsSupersededByFullRefreshAndCancelledByStop() async throws {
+        try await startAndClearCalls()
+        // Test cancellation after scheduling; notification delivery is covered by the burst test.
+        service.scheduleMoveRefresh()
+        service.refresh()
+        await waitFor { queries.count == 3 }
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertEqual(queries.count, 3)
+        try write("calls", "")
+        service.scheduleMoveRefresh()
+        await stopAndWait()
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertTrue(queries.isEmpty)
     }
 
     @MainActor
@@ -190,7 +326,7 @@ final class YabaiServiceTests: XCTestCase {
         XCTAssertFalse(service.isConnected)
         service.refresh()
         await waitFor { service.isConnected }
-        await waitFor { calls.filter { $0 == "signal --remove" }.count == 3 }
+        await waitFor { calls.filter { $0 == "signal --remove" }.count == 4 }
     }
 
     @MainActor
@@ -205,7 +341,7 @@ final class YabaiServiceTests: XCTestCase {
         try await Task.sleep(nanoseconds: 150_000_000)
         XCTAssertEqual(queries.count, 3)
         service.stop()
-        await waitFor { calls.filter { $0 == "signal --remove" }.count == 3 }
+        await waitFor { calls.filter { $0 == "signal --remove" }.count == 4 }
     }
 
     @MainActor
@@ -227,7 +363,7 @@ final class YabaiServiceTests: XCTestCase {
         try await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertEqual(queries.count, 3)
         service.stop()
-        await waitFor { calls.filter { $0 == "signal --remove" }.count == 3 }
+        await waitFor { calls.filter { $0 == "signal --remove" }.count == 4 }
     }
 
     @MainActor
@@ -255,7 +391,7 @@ final class YabaiServiceTests: XCTestCase {
         service.stop()
         await waitFor {
             let log = (try? String(contentsOf: other.appendingPathComponent("calls"), encoding: .utf8)) ?? ""
-            return log.components(separatedBy: "signal --remove").count == 4
+            return log.components(separatedBy: "signal --remove").count == 5
         }
     }
 
@@ -443,9 +579,10 @@ final class YabaiServiceTests: XCTestCase {
         service.start()
         await waitFor { service.isConnected && service.signalsRegistered }
         let adds = arguments.filter { $0.hasPrefix("-m signal --add ") }
-        XCTAssertEqual(adds.count, 2, "the already correct destroyed signal should not be registered again")
+        XCTAssertEqual(adds.count, 3, "the already correct destroyed signal should not be registered again")
         XCTAssertTrue(adds.contains("-m signal --add event=window_title_changed action=\(titleAction) label=abar-window-title-changed"))
         XCTAssertTrue(adds.contains("-m signal --add event=window_focused action=\(fullAction) label=abar-window-focused"))
+        XCTAssertTrue(adds.contains("-m signal --add event=window_moved action=\(fullAction).window-moved label=abar-window-moved"))
         await stopAndWait()
     }
 
@@ -455,7 +592,8 @@ final class YabaiServiceTests: XCTestCase {
         try writeFixture("signals.json", [
             ["index": 0, "label": "abar-window-destroyed", "event": "window_destroyed", "app": "", "title": "", "action": fullAction],
             ["index": 1, "label": "abar-window-title-changed", "event": "window_title_changed", "app": "", "title": "", "action": fullAction + ".window-title-changed"],
-            ["index": 2, "label": "abar-window-focused", "event": "window_focused", "app": "", "title": "", "action": fullAction]
+            ["index": 2, "label": "abar-window-focused", "event": "window_focused", "app": "", "title": "", "action": fullAction],
+            ["index": 3, "label": "abar-window-moved", "event": "window_moved", "app": "", "title": "", "action": fullAction + ".window-moved"]
         ])
         service.start()
         await waitFor { service.isConnected && service.signalsRegistered }

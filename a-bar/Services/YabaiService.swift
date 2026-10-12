@@ -13,12 +13,14 @@ class YabaiService: ObservableObject {
 
     private var signalTimer: Timer?
     private var signalTask: Task<Void, Never>?
+    private var moveRefreshTask: Task<Void, Never>?
     private let refreshNotification: String
     private var signalPath: String?
     private static let signalEvents = [
         ("window_destroyed", "abar-window-destroyed"),
         ("window_title_changed", "abar-window-title-changed"),
         ("window_focused", "abar-window-focused"),
+        ("window_moved", "abar-window-moved"),
     ]
     private let settingsManager: SettingsManager
     private enum RefreshScope { case windows, full }
@@ -30,6 +32,10 @@ class YabaiService: ObservableObject {
 
     private var titleRefreshNotification: String {
         refreshNotification + ".window-title-changed"
+    }
+
+    private var moveRefreshNotification: String {
+        refreshNotification + ".window-moved"
     }
 
     private var yabaiPath: String {
@@ -99,6 +105,7 @@ class YabaiService: ObservableObject {
         if isStarted {
             if signalPath != yabaiPath {
                 refreshGeneration += 1
+                cancelMoveRefresh()
                 isRefreshing = false
                 pendingRefresh = nil
                 hasFullSnapshot = false
@@ -109,7 +116,7 @@ class YabaiService: ObservableObject {
             }
             return
         }
-        for notification in [refreshNotification, titleRefreshNotification] {
+        for notification in [refreshNotification, titleRefreshNotification, moveRefreshNotification] {
             CFNotificationCenterAddObserver(
                 CFNotificationCenterGetDarwinNotifyCenter(),
                 Unmanaged.passUnretained(self).toOpaque(),
@@ -117,9 +124,14 @@ class YabaiService: ObservableObject {
                     guard let observer, let name else { return }
                     let service = Unmanaged<YabaiService>.fromOpaque(observer).takeUnretainedValue()
                     let notification = name.rawValue as String
+                    let generation = service.refreshGeneration
                     DispatchQueue.main.async { [weak service] in
-                        guard let service, service.isStarted else { return }
-                        service.refresh(notification == service.titleRefreshNotification ? .windows : .full)
+                        guard let service, service.isStarted, generation == service.refreshGeneration else { return }
+                        if notification == service.moveRefreshNotification {
+                            service.scheduleMoveRefresh()
+                        } else {
+                            service.refresh(notification == service.titleRefreshNotification ? .windows : .full)
+                        }
                     }
                 },
                 notification as CFString, nil, .deliverImmediately)
@@ -136,7 +148,8 @@ class YabaiService: ObservableObject {
     /// Stop the yabai service
     func stop() {
         isStarted = false
-        for notification in [refreshNotification, titleRefreshNotification] {
+        cancelMoveRefresh()
+        for notification in [refreshNotification, titleRefreshNotification, moveRefreshNotification] {
             CFNotificationCenterRemoveObserver(
                 CFNotificationCenterGetDarwinNotifyCenter(),
                 Unmanaged.passUnretained(self).toOpaque(),
@@ -189,8 +202,32 @@ class YabaiService: ObservableObject {
     
     /// Darwin notifications avoid an AppleScript process and watchdog per window event.
     private func signalAction(for event: String) -> String {
-        let notification = event == "window_title_changed" ? titleRefreshNotification : refreshNotification
+        let notification: String
+        switch event {
+        case "window_title_changed": notification = titleRefreshNotification
+        case "window_moved": notification = moveRefreshNotification
+        default: notification = refreshNotification
+        }
         return "/usr/bin/notifyutil -p \(notification)"
+    }
+
+    /// A drag emits many move events; query once after the window settles.
+    @MainActor
+    func scheduleMoveRefresh() {
+        cancelMoveRefresh()
+        let generation = refreshGeneration
+        moveRefreshTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: 300_000_000) }
+            catch { return }
+            guard let self, self.isStarted, generation == self.refreshGeneration else { return }
+            self.moveRefreshTask = nil
+            self.refresh()
+        }
+    }
+
+    private func cancelMoveRefresh() {
+        moveRefreshTask?.cancel()
+        moveRefreshTask = nil
     }
 
     private func setupYabaiSignals() {
@@ -244,12 +281,14 @@ class YabaiService: ObservableObject {
         let generation = refreshGeneration
         Task { @MainActor in
             guard generation == refreshGeneration else { return }
+            if requestedScope == .full { cancelMoveRefresh() }
             enqueueRefresh(requestedScope)
             guard !isRefreshing else { return }
             isRefreshing = true
             while let requested = pendingRefresh {
                 pendingRefresh = nil
                 let scope: RefreshScope = hasFullSnapshot ? requested : .full
+                if scope == .full { cancelMoveRefresh() }
                 let path = yabaiPath
                 do {
                     var next: YabaiState
@@ -328,58 +367,70 @@ class YabaiService: ObservableObject {
 
     /// Focus on a specific space
     func goToSpace(_ index: Int) async {
+        let generation = refreshGeneration
         do {
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", "--focus", String(index)])
+            await refreshAfterMutation(generation)
         } catch {
-            await handleError(error)
+            await handleMutationError(error, generation: generation)
         }
     }
 
     /// Rename a space
     func renameSpace(_ index: Int, label: String) async {
+        let generation = refreshGeneration
         do {
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", String(index), "--label", label])
+            await refreshAfterMutation(generation)
         } catch {
-            await handleError(error)
+            await handleMutationError(error, generation: generation)
         }
     }
 
     /// Create a new space on a display
     func createSpace(onDisplay displayIndex: Int) async {
+        let generation = refreshGeneration
         do {
             try await focusDisplay(displayIndex)
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", "--create"])
+            await refreshAfterMutation(generation)
         } catch {
-            await handleError(error)
+            await handleMutationError(error, generation: generation)
         }
     }
 
     /// Remove a space
     func removeSpace(_ index: Int, onDisplay displayIndex: Int) async {
+        let generation = refreshGeneration
         do {
             try await focusDisplay(displayIndex)
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", String(index), "--destroy"])
+            await refreshAfterMutation(generation)
         } catch {
-            await handleError(error)
+            await handleMutationError(error, generation: generation)
         }
     }
 
     /// Swap a space with another in the given direction
     func swapSpace(_ index: Int, direction: SwapDirection) async {
+        let generation = refreshGeneration
         let targetIndex = direction == .left ? index - 1 : index + 1
         do {
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "space", String(index), "--swap", String(targetIndex)])
+            await refreshAfterMutation(generation)
         } catch {
-            await handleError(error)
+            await handleMutationError(error, generation: generation)
         }
     }
 
     /// Focus on a specific window
     func focusWindow(_ id: Int) async {
+        let generation = refreshGeneration
         do {
             try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "window", "--focus", String(id)])
+            await refreshAfterMutation(generation)
         } catch {
-            await handleError(error)
+            await handleMutationError(error, generation: generation)
         }
     }
 
@@ -388,7 +439,17 @@ class YabaiService: ObservableObject {
         try await ShellExecutor.run(executable: yabaiPath, arguments: ["-m", "display", "--focus", String(index)])
     }
 
-    // Timer logic removed
+    @MainActor
+    private func refreshAfterMutation(_ generation: Int) {
+        guard isStarted, generation == refreshGeneration else { return }
+        refresh()
+    }
+
+    @MainActor
+    private func handleMutationError(_ error: Error, generation: Int) {
+        guard isStarted, generation == refreshGeneration else { return }
+        handleError(error)
+    }
 
     @MainActor
     private func handleError(_ error: Error) {
