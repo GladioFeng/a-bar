@@ -70,6 +70,42 @@ final class SettingsCodecTests: XCTestCase {
 
   // MARK: - Fields added after a config was written
 
+  func testOlderProcessSettingsKeepWindowPreferencesAndGainSeparateSpaceDisplay() {
+    var config = SettingsFixtures.json(SettingsFixtures.settings())
+    SettingsFixtures.set(false, at: "widgets.process.showLayoutMode", in: &config)
+    SettingsFixtures.set(true, at: "widgets.process.hideWindowTitle", in: &config)
+    SettingsFixtures.set(nil, at: "widgets.process.layoutModeUsesIcon", in: &config)
+    SettingsFixtures.set(nil, at: "widgets.process.spaceLayoutDisplay", in: &config)
+
+    let (settings, repairs) = decodeSettings(config)
+
+    XCTAssertFalse(settings.widgets.process.showLayoutMode)
+    XCTAssertTrue(settings.widgets.process.hideWindowTitle)
+    XCTAssertFalse(settings.widgets.process.layoutModeUsesIcon)
+    XCTAssertEqual(settings.widgets.process.spaceLayoutDisplay, .text)
+    XCTAssertEqual(settings.schemaVersion, 1, "new defaults do not need a schema migration")
+    XCTAssertTrue(repairs.isEmpty)
+  }
+
+  func testProcessLayoutPreferencesRoundTripAndRepairOnlyUnknownSpaceDisplay() {
+    for display in ProcessWidgetSettings.SpaceLayoutDisplay.allCases {
+      var saved = SettingsFixtures.settings()
+      saved.widgets.process.layoutModeUsesIcon = true
+      saved.widgets.process.spaceLayoutDisplay = display
+      let (decoded, repairs) = decodeSettings(SettingsFixtures.json(saved))
+      XCTAssertEqual(decoded.widgets.process, saved.widgets.process)
+      XCTAssertTrue(repairs.isEmpty)
+    }
+
+    var config = SettingsFixtures.json(SettingsFixtures.settings())
+    SettingsFixtures.set(true, at: "widgets.process.layoutModeUsesIcon", in: &config)
+    SettingsFixtures.set("unknown", at: "widgets.process.spaceLayoutDisplay", in: &config)
+    let (settings, repairs) = decodeSettings(config)
+    XCTAssertTrue(settings.widgets.process.layoutModeUsesIcon)
+    XCTAssertEqual(settings.widgets.process.spaceLayoutDisplay, .text)
+    XCTAssertEqual(repairs.map { $0.path }, ["widgets.process.spaceLayoutDisplay"])
+  }
+
   func testMissingWidgetFieldKeepsItsSiblings() {
     // Adding one field to a widget's settings used to silently reset that widget's whole
     // block, because a synthesized decoder treats a missing key as an error.
