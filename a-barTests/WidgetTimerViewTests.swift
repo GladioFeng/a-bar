@@ -1,7 +1,7 @@
-// Purpose: Verify widget mouse clicks and mounted clock refresh interval changes.
+// Purpose: Verify that mounted clock widgets immediately adopt a new refresh interval.
 //
 // Logic:
-// 1. Mount widgets in offscreen windows with temporary settings; click content and padding.
+// 1. Mount a real TimeWidget in an offscreen window with a temporary settings file.
 // 2. Confirm the display stays unchanged with a 60-second interval, then change it to 0.1 seconds.
 // 3. Compare two subsequent frames to confirm that the seconds display keeps updating.
 //
@@ -10,6 +10,11 @@
 import AppKit
 import SwiftUI
 import XCTest
+
+private final class WidgetClickTestPanel: NSPanel {
+  override var canBecomeKey: Bool { true }
+  override var canBecomeMain: Bool { false }
+}
 
 final class WidgetTimerViewTests: XCTestCase {
   @MainActor
@@ -213,9 +218,4 @@ final class WidgetTimerViewTests: XCTestCase {
       try snapshot(), fastFrame,
       "the mounted clock must keep ticking after its refresh interval changes")
   }
-}
-
-private final class WidgetClickTestPanel: NSPanel {
-  override var canBecomeKey: Bool { true }
-  override var canBecomeMain: Bool { false }
 }
